@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pytorch_lightning.strategies import DDPStrategy
@@ -69,8 +70,8 @@ class TestTrainingTrainerRuntime(unittest.TestCase):
         self.assertEqual(strategy, "ddp_spawn")
 
     def test_extract_training_metrics_flattens_lightning_logged_metrics(self) -> None:
-        class _StubTrainer:
-            logged_metrics = {
+        trainer = SimpleNamespace(
+            logged_metrics={
                 "train/loss": 1.23,
                 "train/loss_value": 0.45,
                 "train/loss_policy": 0.78,
@@ -78,9 +79,10 @@ class TestTrainingTrainerRuntime(unittest.TestCase):
                 "train/policy_accuracy": 0.66,
                 "train/lr": 0.0003,
                 "extra/should_be_ignored": 999.0,
-            }
+            },
+        )
 
-        result = extract_training_metrics(_StubTrainer())  # type: ignore[arg-type]
+        result = extract_training_metrics(trainer)  # type: ignore[arg-type]
 
         self.assertEqual(result["train_loss_total"], 1.23)
         self.assertAlmostEqual(result["train_loss_value"], 0.45)
@@ -92,26 +94,20 @@ class TestTrainingTrainerRuntime(unittest.TestCase):
         self.assertNotIn("extra_should_be_ignored", result)
 
     def test_extract_training_metrics_returns_empty_for_warmup_only_iter(self) -> None:
-        class _StubTrainer:
-            logged_metrics: dict[str, float] = {}
-            callback_metrics: dict[str, float] = {}
-
-        self.assertEqual(extract_training_metrics(_StubTrainer()), {})  # type: ignore[arg-type]
+        trainer = SimpleNamespace(logged_metrics={}, callback_metrics={})
+        self.assertEqual(extract_training_metrics(trainer), {})  # type: ignore[arg-type]
 
     def test_extract_training_metrics_skips_missing_keys(self) -> None:
-        class _StubTrainer:
-            logged_metrics = {"train/loss": 0.9, "train/lr": 0.001}
+        trainer = SimpleNamespace(logged_metrics={"train/loss": 0.9, "train/lr": 0.001})
 
-        result = extract_training_metrics(_StubTrainer())  # type: ignore[arg-type]
+        result = extract_training_metrics(trainer)  # type: ignore[arg-type]
 
         self.assertEqual(set(result.keys()), {"train_loss_total", "train_lr"})
 
     def test_extract_training_metrics_falls_back_to_callback_metrics(self) -> None:
-        class _StubTrainer:
-            logged_metrics: dict[str, float] = {}
-            callback_metrics = {"train/loss": 2.0}
+        trainer = SimpleNamespace(logged_metrics={}, callback_metrics={"train/loss": 2.0})
 
-        result = extract_training_metrics(_StubTrainer())  # type: ignore[arg-type]
+        result = extract_training_metrics(trainer)  # type: ignore[arg-type]
 
         self.assertEqual(result, {"train_loss_total": 2.0})
 

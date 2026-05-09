@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Callable
 
 from training.config_validation_runtime import validate_bootstrap_warmup_config
 
@@ -11,11 +12,7 @@ def _make_cfg(
     reset_iteration: bool,
     warmup_games: int,
     warmup_epochs: int,
-) -> tuple[
-    "callable[[str], bool]",
-    "callable[[str], int]",
-    "callable[[str], str]",
-]:
+) -> tuple[Callable[[str], bool], Callable[[str], int], Callable[[str], str]]:
     bools = {"hf_reset_iteration": reset_iteration}
     ints = {"warmup_games": warmup_games, "warmup_epochs": warmup_epochs}
     strs = {"hf_bootstrap_run_id": bootstrap_run_id}

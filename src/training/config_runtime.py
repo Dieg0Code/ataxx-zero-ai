@@ -16,18 +16,11 @@ from training.config_validation_runtime import (
 from training.league_config_runtime import DEFAULT_LEAGUE_CONFIG, validate_league_config
 
 TrainerPrecision = Literal[
-    "16",
-    "16-mixed",
-    "16-true",
-    "32",
-    "32-true",
-    "64",
-    "64-true",
-    "bf16",
-    "bf16-mixed",
-    "bf16-true",
-    "transformer-engine",
-    "transformer-engine-float16",
+    "16", "16-mixed", "16-true",
+    "32", "32-true",
+    "64", "64-true",
+    "bf16", "bf16-mixed", "bf16-true",
+    "transformer-engine", "transformer-engine-float16",
 ]
 CONFIG: dict[str, int | float | bool | str] = {
     "iterations": 20,
@@ -425,11 +418,7 @@ def validate_config() -> None:
         raise ValueError("CONFIG['warmup_games'] must be >= 0.")
     if cfg_int("warmup_epochs") < 0:
         raise ValueError("CONFIG['warmup_epochs'] must be >= 0.")
-    validate_bootstrap_warmup_config(
-        cfg_bool=cfg_bool,
-        cfg_int=cfg_int,
-        cfg_str=cfg_str,
-    )
+    validate_bootstrap_warmup_config(cfg_bool=cfg_bool, cfg_int=cfg_int, cfg_str=cfg_str)
     train_recent_fraction = cfg_float("train_recent_fraction")
     if not 0.0 <= train_recent_fraction <= 1.0:
         raise ValueError("CONFIG['train_recent_fraction'] must be in [0, 1].")
