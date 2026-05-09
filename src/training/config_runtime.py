@@ -149,11 +149,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--devices", type=int, default=None)
     parser.add_argument("--strategy", default=None)
     parser.add_argument("--ddp-timeout-s", type=int, default=None)
-    parser.add_argument(
-        "--precision",
-        choices=["16-mixed", "bf16-mixed", "32-true"],
-        default=None,
-    )
+    parser.add_argument("--precision", choices=["16-mixed", "bf16-mixed", "32-true"], default=None)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--monitor-log-every", type=int, default=None)
     parser.add_argument("--epoch-pulse-every", type=int, default=None)
@@ -166,11 +162,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--opp-self", type=float, default=None)
     parser.add_argument("--opp-heuristic", type=float, default=None)
     parser.add_argument("--opp-random", type=float, default=None)
-    parser.add_argument(
-        "--opp-heuristic-level",
-        choices=list(HEURISTIC_LEVELS),
-        default=None,
-    )
+    parser.add_argument("--opp-heuristic-level", choices=list(HEURISTIC_LEVELS), default=None)
     parser.add_argument("--opp-heu-easy", type=float, default=None)
     parser.add_argument("--opp-heu-normal", type=float, default=None)
     parser.add_argument("--opp-heu-hard", type=float, default=None)
@@ -191,17 +183,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-hf-upload-errors", action="store_true")
     parser.add_argument("--warmup-games", type=int, default=None)
     parser.add_argument("--warmup-epochs", type=int, default=None)
-    parser.add_argument(
-        "--warmup-heuristic-level",
-        choices=list(HEURISTIC_LEVELS),
-        default=None,
-    )
+    parser.add_argument("--warmup-heuristic-level", choices=list(HEURISTIC_LEVELS), default=None)
     parser.add_argument("--warmup-heuristic-levels", default=None)
-    parser.add_argument(
-        "--eval-heuristic-level",
-        choices=list(HEURISTIC_LEVELS),
-        default=None,
-    )
+    parser.add_argument("--eval-heuristic-level", choices=list(HEURISTIC_LEVELS), default=None)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--no-compile", action="store_true")
     parser.add_argument("--hf", action="store_true")
@@ -211,9 +195,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hf-reset-iteration", action="store_true")
     parser.add_argument("--max-pending-hf-uploads", type=int, default=None)
     parser.add_argument("--hf-upload-timeout-s", type=float, default=None)
+    parser.add_argument("--config-json", default=None, help="JSON file with CONFIG overrides.")
     return parser.parse_args()
 
 def apply_cli_overrides(args: argparse.Namespace) -> None:
+    if getattr(args, "config_json", None):
+        import json as _json
+        overrides = _json.loads(Path(args.config_json).read_text(encoding="utf-8"))
+        unknown = [k for k in overrides if k not in CONFIG]
+        if unknown:
+            raise ValueError(f"--config-json has unknown keys: {unknown}")
+        CONFIG.update(overrides)
     if args.persistent_workers and args.no_persistent_workers:
         raise ValueError("Use only one of --persistent-workers or --no-persistent-workers.")
     if args.shuffle_train_val_split and args.no_shuffle_train_val_split:
