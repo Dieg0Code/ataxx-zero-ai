@@ -1,0 +1,20 @@
+project-includes = [
+    "src/**/*.py",
+    "tests/**/*.py",
+    "scripts/**/*.py",
+    "train.py",
+    "train_improved.py",
+]
+
+project-excludes = [
+    ".venv/**",
+    "**/__pycache__",
+    "**/.mypy_cache",
+    "**/.pytest_cache",
+    "**/*.ipynb",
+    "infra/**",
+    "web/**",
+    ".github/**",
+]
+
+python-interpreter-path = ".venv/Scripts/python.exe"

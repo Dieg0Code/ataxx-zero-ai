@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+.env.local
+.env.*.local
+
+checkpoints/
+logs/
+runs_history/
+hf_checkpoints/
+transcripts/
+.tmp_*
+
+# Web frontend
+web/node_modules/
+web/dist/
+web/.vite/
+web/playwright-report/
+web/test-results/
