@@ -204,7 +204,10 @@ class InferenceService:
         # Training checkpoints prefix model params with `model.` (Lightning module layout).
         # Runtime inference uses the raw network, so we strip this prefix when present.
         if all(key.startswith("model.") for key in state_dict):
-            return {key.removeprefix("model."): value for key, value in state_dict.items()}
+            return {
+                key.removeprefix("model.").removeprefix("_orig_mod."): value
+                for key, value in state_dict.items()
+            }
         return state_dict
 
     def _build_legacy_system(self) -> _SystemLike:

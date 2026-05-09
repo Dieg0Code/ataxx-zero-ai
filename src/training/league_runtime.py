@@ -59,7 +59,8 @@ def _normalize_model_state_dict(payload: dict[str, Any]) -> dict[str, torch.Tens
         if not isinstance(value, torch.Tensor):
             continue
         if key.startswith("model."):
-            model_state[key.removeprefix("model.")] = value.detach().cpu()
+            clean_key = key.removeprefix("model.").removeprefix("_orig_mod.")
+            model_state[clean_key] = value.detach().cpu()
     if len(model_state) == 0:
         raise ValueError("Checkpoint payload does not contain model.* weights.")
     adapted = adapt_state_dict_observation_channels(model_state)

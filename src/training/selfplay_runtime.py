@@ -158,7 +158,7 @@ def _run_parallel_selfplay(
         for episode_seed, opponent_type, heuristic_level, model_player, checkpoint_id in episode_specs
     ]
     model_state_dict = {
-        name: tensor.detach().cpu()
+        name.removeprefix("_orig_mod."): tensor.detach().cpu()
         for name, tensor in system.model.state_dict().items()
     }
     model_cfg: dict[str, int | float] = {
