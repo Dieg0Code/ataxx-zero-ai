@@ -92,6 +92,7 @@ CONFIG: dict[str, int | float | bool | str] = {
     "opponent_heuristic_prob": 0.5,
     "opponent_random_prob": 0.05,
     "opponent_heuristic_level": "normal",
+    "opponent_heuristic_epsilon": 0.0,
     "opponent_heuristic_easy_prob": 0.2,
     "opponent_heuristic_normal_prob": 0.5,
     "opponent_heuristic_hard_prob": 0.3,

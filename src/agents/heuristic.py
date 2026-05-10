@@ -198,13 +198,22 @@ def heuristic_move(
     board: AtaxxBoard,
     rng: np.random.Generator,
     level: str = DEFAULT_HEURISTIC_LEVEL,
+    epsilon: float = 0.0,
 ) -> Move | None:
     if not is_supported_heuristic_level(level):
         raise ValueError(f"Unsupported heuristic level: {level}")
+    if not 0.0 <= epsilon <= 1.0:
+        raise ValueError(f"epsilon must be in [0, 1], got {epsilon}.")
 
     valid_moves = board.get_valid_moves()
     if len(valid_moves) == 0:
         return None
+
+    # epsilon-greedy: with probability epsilon, ignore scoring and pick uniformly
+    # at random. Breaks the determinism that lets a learner memorize an exploit
+    # sequence against a fixed heuristic.
+    if epsilon > 0.0 and float(rng.random()) < epsilon:
+        return valid_moves[int(rng.integers(0, len(valid_moves)))]
 
     if level == "easy":
         scored_moves = [(move, _score_move(board, move)) for move in valid_moves]

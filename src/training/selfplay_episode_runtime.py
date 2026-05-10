@@ -209,7 +209,12 @@ def play_episode(
             continue
 
         if opponent_type == "heuristic":
-            move = heuristic_move(board, rng, opponent_heuristic_level)
+            move = heuristic_move(
+                board,
+                rng,
+                opponent_heuristic_level,
+                epsilon=cfg_float("opponent_heuristic_epsilon"),
+            )
             action_idx = ACTION_SPACE.encode(move)
             _append_history_entry(
                 game_history=game_history,
