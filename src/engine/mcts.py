@@ -143,6 +143,27 @@ class MCTS:
             return None
         return root.children.get(action_idx)
 
+    @staticmethod
+    def top_n_actions(
+        root: MCTSNode | None,
+        n: int = 3,
+    ) -> list[tuple[int, int, float, float]]:
+        """Top-N children of `root` ordered by visit_count desc.
+
+        Returns list of (action_idx, visits, value, prior). Used by HUD.
+        """
+        if root is None or not root.children:
+            return []
+        ranked = sorted(
+            root.children.items(),
+            key=lambda item: item[1].visit_count,
+            reverse=True,
+        )
+        return [
+            (int(action_idx), int(child.visit_count), float(child.value()), float(child.prior))
+            for action_idx, child in ranked[: max(0, int(n))]
+        ]
+
     def _populate_children(
         self,
         node: MCTSNode,

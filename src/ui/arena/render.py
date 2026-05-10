@@ -6,8 +6,8 @@ import pygame
 from agents.types import Agent
 from game.board import AtaxxBoard
 from game.types import Move
-from ui.arena.effects import Particle, wrap_text_line
-from ui.arena.layout import BOARD_PX, BS, CELL, PAD, SIDE, WIN_H, WIN_W
+from ui.arena.effects import Particle
+from ui.arena.layout import BOARD_PX, BS, CELL, PAD, WIN_H, WIN_W
 from ui.arena.theme import (
     BG_BOTTOM,
     BG_TOP,
@@ -97,6 +97,7 @@ def draw_arena(
     intro_until: int,
     game_over_started: int | None,
     final_counts: tuple[int, int] | None,
+    arena_state: dict[str, object] | None = None,
 ) -> None:
     del flash_start, flash_until, flash_color
 
@@ -238,71 +239,32 @@ def draw_arena(
             pygame.draw.circle(scene, (255, 135, 84), (cx, cy), outer_radius, width=3)
             pygame.draw.circle(scene, (255, 228, 118), (cx, cy), inner_radius, width=2)
 
-    panel_x = PAD + BOARD_PX + 20
-    turn_text = (
-        f"Turn: P1 (Red) [{p1_agent}]"
-        if board.current_player == PLAYER_1
-        else f"Turn: P2 (Blue) [{p2_agent}]"
-    )
-    mode_text = "Mode: spectate" if p1_agent != "human" and p2_agent != "human" else "Mode: play"
-    if turn_agent != "human" and not board.is_game_over():
-        dots = "." * ((now_ms // 260) % 4)
-        think_text = f"{turn_agent} thinking{dots}"
-    else:
-        think_text = ""
-
     p1_count, p2_count = _counts(board)
-    lines = [
-        turn_text,
-        mode_text,
-        f"P1: {p1_count}  P2: {p2_count}",
-        f"P1 agent: {p1_agent}",
-        f"P2 agent: {p2_agent}",
-        (f"Heuristic levels: P1={p1_level} | P2={p2_level}" if p1_level != "-" or p2_level != "-" else ""),
-        status,
-        think_text,
-        "",
-        "Controls:",
-        "Click piece -> click target",
-        "R: reset game",
-        "Q: quit",
-    ]
+    mode_text = "spectate" if p1_agent != "human" and p2_agent != "human" else "play"
+    from ui.arena.hud import draw_hud
 
-    panel_rect = pygame.Rect(panel_x - 12, PAD - 6, SIDE - 20, WIN_H - (2 * PAD) + 12)
-    pygame.draw.rect(scene, PANEL_BG, panel_rect, border_radius=14)
-    pygame.draw.rect(scene, PANEL_BORDER, panel_rect, width=2, border_radius=14)
-    pygame.draw.line(
+    draw_hud(
         scene,
-        PANEL_ACCENT,
-        (panel_rect.left + 12, panel_rect.top + 44),
-        (panel_rect.right - 12, panel_rect.top + 44),
-        2,
+        arena_state=arena_state or {},
+        p1_name=str(p1_agent) + (f"({p1_level})" if p1_level != "-" else ""),
+        p2_name=str(p2_agent) + (f"({p2_level})" if p2_level != "-" else ""),
+        p1_count=p1_count,
+        p2_count=p2_count,
+        turn_player=int(board.current_player),
+        turn_index=len(arena_state.get("move_history", []) if isinstance(arena_state, dict) else []) + 1,
+        mode=mode_text,
+        font_title=font,
+        font_body=small,
     )
 
-    title = font.render("ATAXX ARENA", True, TEXT_MAIN)
-    scene.blit(title, (panel_x, PAD))
-
-    y = PAD + 54
-    max_text_width = panel_rect.width - 24
-    panel_bottom = panel_rect.bottom - 16
-    for line in lines:
-        wrapped = wrap_text_line(small, line, max_text_width)
-        if line == "":
-            y += 10
-            continue
-        color = TEXT_MAIN if line == status or line.startswith("Turn:") else TEXT_DIM
-        for wrapped_line in wrapped:
-            if y > panel_bottom:
-                break
-            txt = small.render(wrapped_line, True, color)
-            scene.blit(txt, (panel_x, y))
-            y += 24
-        if y > panel_bottom:
-            break
+    if status:
+        status_y = WIN_H - 26
+        status_surf = small.render(status, True, TEXT_DIM)
+        scene.blit(status_surf, (PAD, status_y))
 
     if board.is_game_over():
-        overlay = font.render(_result_text(board), True, TEXT_MAIN)
-        scene.blit(overlay, (panel_x, y + 8))
+        result_surf = font.render(_result_text(board), True, TEXT_MAIN)
+        scene.blit(result_surf, (PAD, WIN_H - PAD - result_surf.get_height()))
 
     if particles:
         pfx = pygame.Surface((WIN_W, WIN_H), pygame.SRCALPHA)

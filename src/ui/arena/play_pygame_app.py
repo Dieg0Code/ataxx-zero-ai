@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pygame
@@ -280,16 +280,28 @@ def _pick_ai_move(
     rng: np.random.Generator,
     heuristic_level: str,
     mcts: object | None,
-) -> tuple[Move | None, str]:
+) -> tuple[Move | None, str, dict[str, object] | None]:
+    """Pick a move plus optional MCTS diagnostics for the HUD.
+
+    Returns (move, status_text, diagnostics). `diagnostics` is a dict with
+    `top_moves` and `root_value` for model agents, otherwise None.
+    """
+    from agents.registry import agent_kind as _agent_kind
     from agents.selector import pick_ai_move
 
-    return pick_ai_move(
+    if _agent_kind(agent) == "model":
+        from agents.model_agent import model_move_with_diagnostics
+
+        move, diagnostics = model_move_with_diagnostics(board=board, mcts=mcts)
+        return move, "Model AI move played", diagnostics
+    move, text = pick_ai_move(
         board=board,
         agent=agent,
         rng=rng,
         heuristic_level=heuristic_level,
         mcts=mcts,
     )
+    return move, text, None
 
 
 def _infection_wave_schedule(
@@ -400,6 +412,7 @@ def _draw(
     intro_until: int,
     game_over_started: int | None,
     final_counts: tuple[int, int] | None,
+    arena_state: dict[str, object] | None = None,
 ) -> None:
     from ui.arena.render import draw_arena
 
@@ -441,7 +454,10 @@ def _draw(
         intro_until=intro_until,
         game_over_started=game_over_started,
         final_counts=final_counts,
+        arena_state=arena_state,
     )
+
+
 def main() -> None:
     _ensure_src_on_path()
     from game.board import AtaxxBoard
@@ -514,6 +530,17 @@ def main() -> None:
     intro_until = intro_start + (INTRO_STEP_MS * len(INTRO_STEPS))
     game_over_started: int | None = None
     final_counts: tuple[int, int] | None = None
+
+    # Diagnostics consumed by the HUD (Fase 0 plumbing). `last_top_moves` is
+    # populated only after a model agent moves; human/heuristic/random leave
+    # the previous values intact so the panel doesn't blink to empty.
+    arena_state: dict[str, object] = {
+        "last_top_moves": [],
+        "last_root_value": 0.0,
+        "last_thinker": None,
+        "eval_history": [],
+        "move_history": [],
+    }
 
     running = True
     while running:
@@ -651,13 +678,17 @@ def main() -> None:
                 ai_ready_at[player] = now_ms + _ai_delay_ms(board, turn_agent, args.mcts_sims, rng)
                 status = f"{turn_agent} thinking..."
             elif now_ms >= ready_at:
-                move, move_text = _pick_ai_move(
+                move, move_text, diagnostics = _pick_ai_move(
                     board=board,
                     agent=turn_agent,
                     rng=rng,
                     heuristic_level=p1_level if player == PLAYER_1 else p2_level,
                     mcts=model_mcts_by_player[player],
                 )
+                if diagnostics is not None:
+                    arena_state["last_top_moves"] = list(diagnostics.get("top_moves", []))
+                    arena_state["last_root_value"] = float(diagnostics.get("root_value", 0.0))
+                    arena_state["last_thinker"] = player
                 pending_move = move
                 preview_started_at = now_ms
                 pending_apply_at = now_ms + MOVE_PREVIEW_MS_AI
@@ -669,9 +700,17 @@ def main() -> None:
                 status = f"{turn_agent} thinking..."
 
         if pending_apply_at is not None and now_ms >= pending_apply_at:
+            applied_move = pending_move
+            applied_player = int(board.current_player)
             changed, move_cells, infect_cells, old_vals, destination = _apply_move_with_feedback(
                 board,
                 pending_move,
+            )
+            # Append turn entry to history. If no model thought happened this
+            # turn, repeat the previous eval so the chart x-axis stays in sync.
+            cast(list, arena_state["move_history"]).append((applied_player, applied_move))
+            cast(list, arena_state["eval_history"]).append(
+                float(arena_state.get("last_root_value", 0.0)),
             )
             recent = changed
             recent_until = now_ms + HIGHLIGHT_MS
@@ -755,6 +794,7 @@ def main() -> None:
             intro_until=intro_until,
             game_over_started=game_over_started,
             final_counts=final_counts,
+            arena_state=arena_state,
         )
         pygame.display.flip()
         clock.tick(args.fps)
