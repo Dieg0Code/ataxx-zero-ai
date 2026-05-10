@@ -24,7 +24,7 @@ uv sync --group inference              # ONNX runtime (inferencia rápida)
 
 Lo entretenido primero. Todos estos comandos abren una ventana gráfica.
 
-### Vos contra una heurística
+### Tú contra una heurística
 
 ```bash
 uv run python scripts/play_pygame.py --mode play --opponent heuristic --level hard
@@ -32,7 +32,7 @@ uv run python scripts/play_pygame.py --mode play --opponent heuristic --level ha
 
 Niveles disponibles: `easy, normal, hard, apex, gambit, sentinel` (de menos a más fuerte).
 
-### Vos contra un modelo entrenado
+### Tú contra un modelo entrenado
 
 ```bash
 uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpoints/policy_spatial_v6_iter_180.pt --sims 200
@@ -40,7 +40,7 @@ uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpo
 
 `--sims` controla cuán fuerte juega el modelo (más simulaciones MCTS = juego más profundo, más lento). Razonable: 100-400.
 
-### Elegir de qué lado jugás
+### Elegir de qué lado juegas
 
 ```bash
 uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpoints/policy_spatial_v6_iter_180.pt --human-side p2
@@ -217,4 +217,4 @@ src/model/docs/postmortem/   análisis de runs anteriores (PM01-05)
 ## Recursos / contexto
 
 - **Postmortems**: cada run que falló o reveló algo útil tiene su análisis en `src/model/docs/postmortem/`. PM05 es el más reciente y explica el problema de **opponent exploitation** que descubrimos en v6.
-- **Notebook de producción**: `Ataxx_Zero_Kaggle.ipynb`. La primera celda es la única que tocás entre runs.
+- **Notebook de producción**: `Ataxx_Zero_Kaggle.ipynb`. La primera celda es la única que se toca entre runs.
