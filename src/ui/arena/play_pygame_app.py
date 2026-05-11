@@ -761,8 +761,8 @@ def main() -> None:
                     mcts=model_mcts_by_player[player],
                 )
                 if diagnostics is not None:
-                    arena_state["last_top_moves"] = list(diagnostics.get("top_moves", []))
-                    raw_value = float(diagnostics.get("root_value", 0.0))
+                    arena_state["last_top_moves"] = list(diagnostics.get("top_moves", []))  # type: ignore[arg-type]
+                    raw_value = float(cast(float, diagnostics.get("root_value", 0.0) or 0.0))
                     # Normalize to P1 (ROJO) perspective so the HUD reads
                     # intuitively: +1 = P1 winning, -1 = P2 winning.
                     arena_state["last_root_value"] = raw_value if player == PLAYER_1 else -raw_value
@@ -792,7 +792,7 @@ def main() -> None:
             # turn, repeat the previous eval so the chart x-axis stays in sync.
             cast(list, arena_state["move_history"]).append((applied_player, applied_move))
             cast(list, arena_state["eval_history"]).append(
-                float(arena_state.get("last_root_value", 0.0)),
+                float(cast(float, arena_state.get("last_root_value", 0.0) or 0.0)),
             )
             recent = changed
             recent_until = now_ms + HIGHLIGHT_MS

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pygame
 
@@ -277,7 +279,7 @@ def draw_arena(
         p1_count=p1_count,
         p2_count=p2_count,
         turn_player=int(board.current_player),
-        turn_index=len(arena_state.get("move_history", []) if isinstance(arena_state, dict) else []) + 1,
+        turn_index=len(cast(list, arena_state.get("move_history", []) if isinstance(arena_state, dict) else [])) + 1,
         mode=mode_text,
         font_title=font,
         font_body=small,

@@ -8,8 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from model import registry  # noqa: E402
-
+from model import registry
 
 FIXTURE = {
     "schema_version": 1,
@@ -73,7 +72,8 @@ class _RegistryTestCase(unittest.TestCase):
             p.start()
         # Ensure the per-codename .pt fixtures exist so resolve() returns them.
         for entry in FIXTURE["models"]:
-            (self.tmp.parent / entry["file"]).write_bytes(b"")
+            file_name: str = entry["file"]  # type: ignore[assignment]
+            (self.tmp.parent / file_name).write_bytes(b"")
 
     def tearDown(self) -> None:
         for p in self._patches:
@@ -136,7 +136,7 @@ class RankedModelsTests(_RegistryTestCase):
     def test_ranked_by_rr(self) -> None:
         # Inject round_robin scores
         data = registry.load_registry()
-        for m, rr in zip(data["models"], [0.3, 0.8, 0.6]):
+        for m, rr in zip(data["models"], [0.3, 0.8, 0.6], strict=False):
             m["eval"]["round_robin"] = {"score": rr, "wins": 1, "losses": 1, "draws": 0, "games": 4}
         registry.save_registry(data)
         ranked = registry.ranked_models(metric="rr")
