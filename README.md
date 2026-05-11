@@ -24,6 +24,11 @@ uv sync --group inference              # ONNX runtime (inferencia rápida)
 
 Lo entretenido primero. Todos estos comandos abren una ventana gráfica.
 
+> Cada generación de modelo tiene un apodo (`liga`, `centinela`, `bogo`, …) que
+> se puede usar en `--ckpt` directamente. Ver [`docs/MODELS.md`](docs/MODELS.md)
+> para el catálogo completo y `uv run python scripts/list_models.py` para el
+> ranking actual.
+
 ### Tú contra una heurística
 
 ```bash
@@ -35,25 +40,35 @@ Niveles disponibles: `easy, normal, hard, apex, gambit, sentinel` (de menos a m�
 ### Tú contra un modelo entrenado
 
 ```bash
-uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpoints/policy_spatial_v6_iter_180.pt --sims 200
+uv run python scripts/play_pygame.py --mode play --opponent model --ckpt liga --sims 200
 ```
 
-`--sims` controla cuán fuerte juega el modelo (más simulaciones MCTS = juego más profundo, más lento). Razonable: 100-400.
+`--ckpt` acepta apodo (`liga`, `centinela`, `bogo`…), versión (`v8`), alias
+(`latest`, `best`) o un path absoluto. `--sims` controla cuán fuerte juega el
+modelo (más simulaciones MCTS = juego más profundo, más lento). Razonable: 100-400.
 
 ### Elegir de qué lado juegas
 
 ```bash
-uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpoints/policy_spatial_v6_iter_180.pt --human-side p2
+uv run python scripts/play_pygame.py --mode play --opponent model --ckpt liga --human-side p2
 ```
 
 `p1` = juego rojo (empieza), `p2` = juego azul.
+
+### Hot-seat: dos humanos en la misma pantalla
+
+```bash
+uv run python scripts/play_pygame.py --mode play --p1-agent human --p2-agent human
+```
+
+Cada jugador clickea su jugada por turno. Útil para enseñar las reglas o jugar con alguien al lado.
 
 ### Mirar dos modelos jugar entre sí (spectate)
 
 ```bash
 uv run python scripts/play_pygame.py --mode spectate \
-  --p1-agent model --ckpt1 checkpoints/policy_spatial_v6_iter_180.pt \
-  --p2-agent model --ckpt2 checkpoints/policy_spatial_v7_iter_140.pt \
+  --p1-agent model --ckpt1 liga \
+  --p2-agent model --ckpt2 centinela \
   --sims 200
 ```
 
@@ -61,7 +76,7 @@ uv run python scripts/play_pygame.py --mode spectate \
 
 ```bash
 uv run python scripts/play_pygame.py --mode spectate \
-  --p1-agent model --ckpt1 checkpoints/policy_spatial_v6_iter_180.pt \
+  --p1-agent model --ckpt1 liga \
   --p2-agent heuristic --level2 sentinel --sims 200
 ```
 
@@ -81,6 +96,19 @@ uv run python scripts/play_pygame.py --mode spectate \
   --p2-agent heuristic --level2 hard
 ```
 
+### Atajos de teclado en la arena
+
+| Tecla       | Acción                                                                |
+|-------------|-----------------------------------------------------------------------|
+| `space`     | Pausar / reanudar                                                     |
+| `s`         | Avanzar una jugada (solo cuando está pausado, modo step)              |
+| `1` `2` `4` | Velocidad 1× / 2× / 4× (acelera los delays de la IA)                  |
+| `p`         | Captura de pantalla a `arena_screenshots/arena_<ms>.png`              |
+| `r`         | Reiniciar partida                                                     |
+| `q`         | Salir                                                                 |
+
+El HUD lateral muestra en tiempo real las top-3 jugadas que considera la IA con barras de visitas MCTS, la probabilidad de victoria de ROJO en porcentaje grande, historial de jugadas y un mini-gráfico de evaluación. El récord W/L/D persiste entre sesiones en `~/.ataxx_arena_stats.json`.
+
 ---
 
 ## Evaluar checkpoints (sin UI, headless)
@@ -91,7 +119,7 @@ Para medir performance objetiva. Devuelven W/L/D, scores y opcionalmente JSON.
 
 ```bash
 uv run python scripts/eval_checkpoint_vs_heuristic.py \
-  --checkpoint checkpoints/policy_spatial_v6_iter_180.pt \
+  --checkpoint centinela \
   --levels easy,normal,hard,apex,gambit,sentinel \
   --games 64 --sims 160
 ```
@@ -102,12 +130,32 @@ Da el perfil completo del modelo. Si el score varía mucho entre niveles (alto e
 
 ```bash
 uv run python scripts/compare_checkpoints.py \
-  --checkpoint-a checkpoints/policy_spatial_v6_iter_180.pt \
-  --checkpoint-b checkpoints/policy_spatial_v7_iter_140.pt \
+  --checkpoint-a centinela \
+  --checkpoint-b amnesia \
   --games 32 --sims 160
 ```
 
 Útil para responder "¿cuál es genuinamente más fuerte?" — independiente de heurísticas, no se puede sobreajustar.
+
+### Round-robin entre todas las generaciones
+
+```bash
+uv run python scripts/round_robin.py --games 8 --sims 80
+```
+
+Enfrenta cada par del registry (21 pares con 7 generaciones por default — excluye `aprendiz-tardio` para no duplicar identidad). Persiste el score head-to-head en `checkpoints/registry.json` y computa un `round_robin.score` agregado por modelo. La métrica `rr` es la más honesta porque no se puede sobreajustar — un modelo solo gana si genuinamente juega mejor que los otros.
+
+### Listar y rankear todas las generaciones
+
+```bash
+uv run python scripts/list_models.py                  # tabla rankeada (default: combined)
+uv run python scripts/list_models.py --metric rr      # solo head-to-head
+uv run python scripts/list_models.py --metric composite  # solo vs heurísticas
+uv run python scripts/list_models.py --full           # con lore + hparams
+uv run python scripts/eval_all_checkpoints.py         # poblar evals faltantes vs heurísticas
+```
+
+Ver el catálogo completo de generaciones (apodos + historia + lore) en [`docs/MODELS.md`](docs/MODELS.md).
 
 ---
 
@@ -170,15 +218,17 @@ El CSV trae todas las métricas por iteración: scores de eval por nivel, train 
 
 ```bash
 uv run python scripts/export_model_onnx.py \
-  --checkpoint checkpoints/policy_spatial_v6_iter_180.pt \
-  --output ataxx_v6.onnx
+  --checkpoint checkpoints/policy_spatial_v8_iter_180.pt \
+  --output ataxx_liga.onnx
 ```
 
 ```bash
 uv run python scripts/check_onnx_parity.py \
-  --checkpoint checkpoints/policy_spatial_v6_iter_180.pt \
-  --onnx ataxx_v6.onnx
+  --checkpoint checkpoints/policy_spatial_v8_iter_180.pt \
+  --onnx ataxx_liga.onnx
 ```
+
+(Estos scripts todavía esperan path explícito; si querés que acepten codename del registry, es un PR de 2 líneas.)
 
 ---
 
@@ -199,15 +249,26 @@ uv run pyrefly check
 src/
   game/        reglas Ataxx (tablero, movimientos, serialización)
   engine/      MCTS
-  model/       transformer policy/value + Lightning module
+  model/       transformer policy/value, Lightning, registry de generaciones
   agents/      human, random, heurísticas, modelo+MCTS
   training/    self-play, eval gating, league, warmup, callbacks
   inference/   torch + ONNX, duelos entre checkpoints
-  ui/arena/    arena Pygame
+  ui/arena/    arena Pygame (HUD táctico, postfx CRT, fonts retro, stats)
   data/        replay buffer + dataset
 
-scripts/       entry points (play, eval, export, compare, fetch_history)
-checkpoints/   modelos guardados (no en git)
+scripts/
+  play_pygame.py             arena (jugar / espectar)
+  eval_checkpoint_vs_heuristic.py   eval contra heurísticas
+  compare_checkpoints.py     duelo head-to-head A vs B
+  list_models.py             tabla rankeada de generaciones
+  eval_all_checkpoints.py    gauntlet automatizado para todos los modelos
+  round_robin.py             round-robin head-to-head entre generaciones
+  fetch_run_history.py       baja metadata de runs desde HF Hub
+  export_model_onnx.py       export para inferencia rápida
+  check_onnx_parity.py       verifica que ONNX y torch dan los mismos outputs
+
+checkpoints/   modelos guardados + registry.json (catálogo con apodos)
+docs/MODELS.md catálogo humano-legible de las generaciones
 tests/         pytest
 src/model/docs/postmortem/   análisis de runs anteriores (PM01-05)
 ```

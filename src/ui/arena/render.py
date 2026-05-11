@@ -23,6 +23,7 @@ from ui.arena.theme import (
     PANEL_ACCENT,
     PANEL_BG,
     PANEL_BORDER,
+    PIECE_FLIP_MS,
     PIECE_P1,
     PIECE_P2,
     PIECE_SHADOW,
@@ -38,8 +39,11 @@ from ui.arena.theme import (
     TEXT_MAIN,
     TILE_A,
     TILE_B,
+    USE_PIXEL_PIECES,
     VIGNETTE,
 )
+from ui.arena.pieces import blit_pixel_piece
+from ui.arena.postfx import apply_crt
 
 PLAYER_1 = 1
 PLAYER_2 = -1
@@ -53,10 +57,13 @@ def _counts(board: AtaxxBoard) -> tuple[int, int]:
 def _result_text(board: AtaxxBoard) -> str:
     result = board.get_result()
     if result == 1:
-        return "Winner: P1 (Red)"
+        return "Gana: P1 (ROJO)"
     if result == -1:
-        return "Winner: P2 (Blue)"
-    return "Result: Draw"
+        return "Gana: P2 (AZUL)"
+    return "Empate"
+
+
+import math
 
 
 def draw_arena(
@@ -99,8 +106,6 @@ def draw_arena(
     final_counts: tuple[int, int] | None,
     arena_state: dict[str, object] | None = None,
 ) -> None:
-    del flash_start, flash_until, flash_color
-
     scene = pygame.Surface((WIN_W, WIN_H))
 
     for y in range(WIN_H):
@@ -111,9 +116,6 @@ def draw_arena(
             int(BG_TOP[2] * (1.0 - t) + BG_BOTTOM[2] * t),
         )
         pygame.draw.line(scene, color, (0, y), (WIN_W, y))
-
-    for y in range(0, WIN_H, 4):
-        pygame.draw.line(scene, SCANLINE, (0, y), (WIN_W, y), 1)
 
     brect = pygame.Rect(PAD, PAD, BOARD_PX, BOARD_PX)
     outer = brect.inflate(18, 18)
@@ -141,10 +143,17 @@ def draw_arena(
             cx = PAD + (c * CELL) + (CELL // 2)
             cy = PAD + (r * CELL) + (CELL // 2)
             cell_key = (r, c)
-            if cell_key in infection_hidden and now_ms < infection_hidden[cell_key][0]:
-                v = infection_hidden[cell_key][1]
-            else:
-                v = int(board.grid[r, c])
+            new_v = int(board.grid[r, c])
+            flip_progress: float | None = None
+            v = new_v
+            if cell_key in infection_hidden:
+                reveal_ms, old_v = infection_hidden[cell_key]
+                flip_start = reveal_ms - PIECE_FLIP_MS
+                if now_ms < flip_start:
+                    v = old_v
+                elif now_ms < reveal_ms:
+                    flip_progress = (now_ms - flip_start) / max(1, PIECE_FLIP_MS)
+                    v = old_v if flip_progress < 0.5 else new_v
             scale = 1.0
             pop_span = piece_pop.get(cell_key)
             if pop_span is not None:
@@ -157,14 +166,31 @@ def draw_arena(
                     scale = 0.55 + (0.45 * ease)
             radius = int((CELL // 3) * scale)
             radius = max(8, radius)
-            if v == PLAYER_1:
-                pygame.draw.circle(scene, PIECE_SHADOW, (cx + 2, cy + 3), radius)
-                pygame.draw.circle(scene, PIECE_P1, (cx, cy), radius)
-                pygame.draw.circle(scene, (255, 170, 190), (cx - 8, cy - 8), 8)
-            elif v == PLAYER_2:
-                pygame.draw.circle(scene, PIECE_SHADOW, (cx + 2, cy + 3), radius)
-                pygame.draw.circle(scene, PIECE_P2, (cx, cy), radius)
-                pygame.draw.circle(scene, (175, 226, 255), (cx - 8, cy - 8), 8)
+            if v == PLAYER_1 or v == PLAYER_2:
+                if flip_progress is not None:
+                    # Squash horizontally to mimic a coin flip; render to a temp
+                    # surface and smoothscale x to |cos(pi*progress)|.
+                    diameter = radius * 2 + 4
+                    tmp = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+                    if USE_PIXEL_PIECES:
+                        blit_pixel_piece(tmp, diameter // 2, diameter // 2, radius, v)
+                    else:
+                        color = PIECE_P1 if v == PLAYER_1 else PIECE_P2
+                        pygame.draw.circle(tmp, PIECE_SHADOW, (diameter // 2 + 2, diameter // 2 + 3), radius)
+                        pygame.draw.circle(tmp, color, (diameter // 2, diameter // 2), radius)
+                    sx_scale = max(0.05, abs(math.cos(math.pi * flip_progress)))
+                    tw = max(2, int(diameter * sx_scale))
+                    flipped = pygame.transform.smoothscale(tmp, (tw, diameter))
+                    rect = flipped.get_rect(center=(cx, cy))
+                    scene.blit(flipped, rect.topleft)
+                elif USE_PIXEL_PIECES:
+                    blit_pixel_piece(scene, cx, cy, radius, v)
+                else:
+                    color = PIECE_P1 if v == PLAYER_1 else PIECE_P2
+                    spec = (255, 170, 190) if v == PLAYER_1 else (175, 226, 255)
+                    pygame.draw.circle(scene, PIECE_SHADOW, (cx + 2, cy + 3), radius)
+                    pygame.draw.circle(scene, color, (cx, cy), radius)
+                    pygame.draw.circle(scene, spec, (cx - 8, cy - 8), 8)
 
     if preview_move is not None and now_ms < preview_until:
         r1, c1, r2, c2 = preview_move
@@ -316,7 +342,7 @@ def draw_arena(
         card = pygame.Rect(card_x, card_y, card_w, card_h)
         pygame.draw.rect(scene, PANEL_BG, card, border_radius=16)
         pygame.draw.rect(scene, PANEL_BORDER, card, width=2, border_radius=16)
-        head = font.render("MATCH RESULT", True, TEXT_MAIN)
+        head = font.render("RESULTADO", True, TEXT_MAIN)
         scene.blit(head, (card_x + 24, card_y + 18))
         result = font.render(_result_text(board), True, TARGET)
         scene.blit(result, (card_x + 24, card_y + 58))
@@ -324,8 +350,9 @@ def draw_arena(
         scene.blit(line, (card_x + 24, card_y + 106))
         line2 = small.render(f"P2 (Blue): {shown_p2}", True, PIECE_P2)
         scene.blit(line2, (card_x + 24, card_y + 136))
-        hint = small.render("Press R to restart  |  Q to quit", True, TEXT_DIM)
+        hint = small.render("R: reiniciar    Q: salir", True, TEXT_DIM)
         scene.blit(hint, (card_x + 24, card_y + 182))
 
+    apply_crt(scene)
     screen.fill((0, 0, 0))
     screen.blit(scene, shake_offset)

@@ -71,6 +71,10 @@ def summarize_match_results(*, results: list[MatchResult]) -> dict[str, float | 
 
 
 def load_system_from_checkpoint(checkpoint_path: Path, *, device: str) -> AtaxxZero:
+    from model.checkpoint_compat import (
+        drop_legacy_policy_head,
+        has_legacy_flat_policy_head,
+    )
     from model.system import AtaxxZero
 
     payload = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
@@ -78,12 +82,16 @@ def load_system_from_checkpoint(checkpoint_path: Path, *, device: str) -> AtaxxZ
         raise ValueError("Invalid checkpoint format: expected dictionary.")
     state_dict_obj = extract_checkpoint_state_dict(payload)
     system = AtaxxZero(**extract_model_kwargs(payload))
-    system.load_state_dict(
-        adapt_state_dict_observation_channels(
-            state_dict_obj,
-            target_channels=int(system.model.num_input_channels),
-        )
+    adapted = adapt_state_dict_observation_channels(
+        state_dict_obj,
+        target_channels=int(system.model.num_input_channels),
     )
+    if has_legacy_flat_policy_head(adapted):
+        # Pre-spatial checkpoints (bogo/v1): keep encoder + value, drop policy.
+        adapted = drop_legacy_policy_head(adapted)
+        system.load_state_dict(adapted, strict=False)
+    else:
+        system.load_state_dict(adapted)
     system.eval()
     system.to(device)
     return system

@@ -155,8 +155,10 @@ def _resolve_heuristic_levels(
 def _load_system(checkpoint_path: str, device: str) -> AtaxxZero:
     from model.checkpoint_compat import (
         adapt_state_dict_observation_channels,
+        drop_legacy_policy_head,
         extract_checkpoint_state_dict,
         extract_model_kwargs,
+        has_legacy_flat_policy_head,
     )
     from model.system import AtaxxZero
 
@@ -171,18 +173,25 @@ def _load_system(checkpoint_path: str, device: str) -> AtaxxZero:
             raise ValueError("Invalid checkpoint format")
         state_dict_obj = extract_checkpoint_state_dict(checkpoint)
         system = AtaxxZero(**extract_model_kwargs(checkpoint))
-        try:
-            system.load_state_dict(
-                adapt_state_dict_observation_channels(
-                    state_dict_obj,
-                    target_channels=int(system.model.num_input_channels),
-                )
+        adapted = adapt_state_dict_observation_channels(
+            state_dict_obj,
+            target_channels=int(system.model.num_input_channels),
+        )
+        if has_legacy_flat_policy_head(adapted):
+            print(
+                "[checkpoint_compat] legacy flat policy_head detected; "
+                "loading encoder+value only, policy stays randomly initialized."
             )
-        except RuntimeError as exc:
-            raise ValueError(
-                "Checkpoint incompatible con architecture policy_head espacial; "
-                "reentrena o usa carga parcial manual (strict=False)."
-            ) from exc
+            adapted = drop_legacy_policy_head(adapted)
+            system.load_state_dict(adapted, strict=False)
+        else:
+            try:
+                system.load_state_dict(adapted)
+            except RuntimeError as exc:
+                raise ValueError(
+                    "Checkpoint incompatible con architecture policy_head espacial; "
+                    "reentrena o usa carga parcial manual (strict=False)."
+                ) from exc
     system.eval()
     system.to(device)
     return system
@@ -219,10 +228,10 @@ def _counts(board: AtaxxBoard) -> tuple[int, int]:
 def _result_text(board: AtaxxBoard) -> str:
     result = board.get_result()
     if result == 1:
-        return "Winner: P1 (Red)"
+        return "Gana: P1 (ROJO)"
     if result == -1:
-        return "Winner: P2 (Blue)"
-    return "Result: Draw"
+        return "Gana: P2 (AZUL)"
+    return "Empate"
 
 def _ai_delay_ms(board: AtaxxBoard, agent: Agent, sims: int, rng: np.random.Generator) -> int:
     valid_count = len(board.get_valid_moves())
@@ -473,12 +482,22 @@ def main() -> None:
         p2_agent,
         default_heuristic_level=args.heuristic_level,
     ) == "model":
+        from model.registry import resolve as resolve_codename
+
+        def _resolve_or_blank(name: str) -> str:
+            if not name:
+                return ""
+            try:
+                return str(resolve_codename(name))
+            except (FileNotFoundError, ValueError):
+                return name
+
         checkpoints_by_player = resolve_model_checkpoints(
-            shared_checkpoint=args.checkpoint,
+            shared_checkpoint=_resolve_or_blank(args.checkpoint),
             p1_agent=p1_agent,
             p2_agent=p2_agent,
-            p1_checkpoint=args.p1_checkpoint,
-            p2_checkpoint=args.p2_checkpoint,
+            p1_checkpoint=_resolve_or_blank(args.p1_checkpoint),
+            p2_checkpoint=_resolve_or_blank(args.p2_checkpoint),
         )
         model_mcts_by_player = build_model_mcts_by_player(
             checkpoints_by_player=checkpoints_by_player,
@@ -489,11 +508,23 @@ def main() -> None:
         )
 
     pygame.init()
-    screen = pygame.display.set_mode((WIN_W, WIN_H))
+    info = pygame.display.Info()
+    # Leave room for title bar + top/bottom taskbars on small displays.
+    avail_w = max(640, info.current_w - 60)
+    avail_h = max(480, info.current_h - 160)
+    display_scale = min(avail_w / WIN_W, avail_h / WIN_H, 1.0)
+    win_size = (int(WIN_W * display_scale), int(WIN_H * display_scale))
+    window = pygame.display.set_mode(win_size)
     pygame.display.set_caption("Ataxx Arena")
-    font = pygame.font.SysFont("consolas", 28)
-    small = pygame.font.SysFont("consolas", 20)
-    big = pygame.font.SysFont("consolas", 104, bold=True)
+    screen = pygame.Surface((WIN_W, WIN_H)) if display_scale < 1.0 else window
+
+    def _virtual_mouse_pos() -> tuple[int, int]:
+        mx, my = pygame.mouse.get_pos()
+        if display_scale >= 1.0:
+            return mx, my
+        return int(mx / display_scale), int(my / display_scale)
+    from ui.arena.fonts import load_arena_fonts
+    font, small, big = load_arena_fonts()
     clock = pygame.time.Clock()
 
     board = AtaxxBoard()
@@ -540,7 +571,20 @@ def main() -> None:
         "last_thinker": None,
         "eval_history": [],
         "move_history": [],
+        "speed_mult": 1.0,
+        "paused": False,
+        "stats_record": {"w": 0, "l": 0, "d": 0},
     }
+    speed_mult = 1.0
+    paused = False
+    step_once = False
+    stats_recorded = False
+    p1_label = f"{p1_agent}({p1_level})" if p1_level != "-" else str(p1_agent)
+    p2_label = f"{p2_agent}({p2_level})" if p2_level != "-" else str(p2_agent)
+    from ui.arena import stats as arena_stats
+
+    arena_state["stats_record"] = arena_stats.get_record(p1_label, p2_label)
+    screenshots_dir = Path("arena_screenshots")
 
     running = True
     while running:
@@ -569,13 +613,18 @@ def main() -> None:
         if board.is_game_over() and game_over_started is None:
             game_over_started = now_ms
             final_counts = _counts(board)
+            if not stats_recorded:
+                arena_state["stats_record"] = arena_stats.record_result(
+                    p1_label, p2_label, int(board.get_result()),
+                )
+                stats_recorded = True
         human_turn = turn_agent == "human" and not board.is_game_over() and not intro_active
         ai_turn = turn_agent != "human" and not board.is_game_over() and not intro_active
         hover_cell = None
         hover_targets = []
         hover_target_kind = {}
         if human_turn and pending_apply_at is None:
-            hover_cell = _cell_from_pos(*pygame.mouse.get_pos())
+            hover_cell = _cell_from_pos(*_virtual_mouse_pos())
             if selected is None and hover_cell is not None:
                 hr, hc = hover_cell
                 if int(board.grid[hr, hc]) == board.current_player:
@@ -588,6 +637,26 @@ def main() -> None:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q:
                     running = False
+                elif event.key == pygame.K_SPACE:
+                    paused = not paused
+                    arena_state["paused"] = paused
+                elif event.key == pygame.K_s and paused:
+                    step_once = True
+                elif event.key == pygame.K_1:
+                    speed_mult = 1.0
+                    arena_state["speed_mult"] = speed_mult
+                elif event.key == pygame.K_2:
+                    speed_mult = 2.0
+                    arena_state["speed_mult"] = speed_mult
+                elif event.key == pygame.K_4:
+                    speed_mult = 4.0
+                    arena_state["speed_mult"] = speed_mult
+                elif event.key == pygame.K_p:
+                    screenshots_dir.mkdir(exist_ok=True)
+                    fname = pygame.time.get_ticks()
+                    out_path = screenshots_dir / f"arena_{fname}.png"
+                    pygame.image.save(window if screen is not window else screen, str(out_path))
+                    status = f"Captura guardada: {out_path}"
                 elif event.key == pygame.K_r:
                     board = AtaxxBoard()
                     selected = None
@@ -596,7 +665,7 @@ def main() -> None:
                     hover_targets = []
                     hover_target_kind = {}
                     hover_cell = None
-                    status = "Game reset"
+                    status = "Partida reiniciada"
                     ai_ready_at = {PLAYER_1: None, PLAYER_2: None}
                     recent = []
                     move_cells = []
@@ -619,13 +688,17 @@ def main() -> None:
                     intro_until = intro_start + (INTRO_STEP_MS * len(INTRO_STEPS))
                     game_over_started = None
                     final_counts = None
+                    stats_recorded = False
+                    arena_state["last_top_moves"] = []
+                    arena_state["eval_history"] = []
+                    arena_state["move_history"] = []
             elif (
                 event.type == pygame.MOUSEBUTTONDOWN
                 and event.button == 1
                 and human_turn
                 and pending_apply_at is None
             ):
-                cell = _cell_from_pos(*pygame.mouse.get_pos())
+                cell = _cell_from_pos(*_virtual_mouse_pos())
                 if cell is None:
                     continue
                 row, col = cell
@@ -659,7 +732,7 @@ def main() -> None:
                         pending_apply_at = now_ms + MOVE_PREVIEW_MS_HUMAN
                         preview_move = candidate
                         preview_until = int(pending_apply_at)
-                        status = "Preparing human move..."
+                        status = "Preparando jugada humana..."
                         ai_ready_at = {PLAYER_1: None, PLAYER_2: None}
 
         if human_turn and not board.has_valid_moves() and pending_apply_at is None:
@@ -668,15 +741,17 @@ def main() -> None:
             pending_apply_at = now_ms + MOVE_PREVIEW_MS_HUMAN
             preview_move = None
             preview_until = int(pending_apply_at)
-            status = "Human passing..."
+            status = "Humano pasa turno..."
             ai_ready_at = {PLAYER_1: None, PLAYER_2: None}
 
-        if ai_turn and pending_apply_at is None:
+        ai_gate_open = ai_turn and pending_apply_at is None and (not paused or step_once)
+        if ai_gate_open:
             player = board.current_player
             ready_at = ai_ready_at[player]
             if ready_at is None:
-                ai_ready_at[player] = now_ms + _ai_delay_ms(board, turn_agent, args.mcts_sims, rng)
-                status = f"{turn_agent} thinking..."
+                base_delay = _ai_delay_ms(board, turn_agent, args.mcts_sims, rng)
+                ai_ready_at[player] = now_ms + max(40, int(base_delay / max(0.5, speed_mult)))
+                status = f"{turn_agent} pensando..."
             elif now_ms >= ready_at:
                 move, move_text, diagnostics = _pick_ai_move(
                     board=board,
@@ -687,17 +762,24 @@ def main() -> None:
                 )
                 if diagnostics is not None:
                     arena_state["last_top_moves"] = list(diagnostics.get("top_moves", []))
-                    arena_state["last_root_value"] = float(diagnostics.get("root_value", 0.0))
+                    raw_value = float(diagnostics.get("root_value", 0.0))
+                    # Normalize to P1 (ROJO) perspective so the HUD reads
+                    # intuitively: +1 = P1 winning, -1 = P2 winning.
+                    arena_state["last_root_value"] = raw_value if player == PLAYER_1 else -raw_value
                     arena_state["last_thinker"] = player
                 pending_move = move
                 preview_started_at = now_ms
-                pending_apply_at = now_ms + MOVE_PREVIEW_MS_AI
+                preview_dur = max(40, int(MOVE_PREVIEW_MS_AI / max(0.5, speed_mult)))
+                pending_apply_at = now_ms + preview_dur
                 preview_move = move
                 preview_until = int(pending_apply_at)
                 status = move_text.replace("played", "queued")
                 ai_ready_at = {PLAYER_1: None, PLAYER_2: None}
+                step_once = False
             else:
-                status = f"{turn_agent} thinking..."
+                status = f"{turn_agent} pensando..."
+        elif paused and ai_turn and pending_apply_at is None:
+            status = "PAUSA  (espacio=reanudar, s=paso, 1/2/4=velocidad)"
 
         if pending_apply_at is not None and now_ms >= pending_apply_at:
             applied_move = pending_move
@@ -732,7 +814,7 @@ def main() -> None:
             preview_move = None
             preview_started_at = None
             preview_until = 0
-            status = "Move resolved"
+            status = "Jugada resuelta"
 
             has_infection = len(infect_cells) > 0
             shake_start = now_ms
@@ -796,6 +878,8 @@ def main() -> None:
             final_counts=final_counts,
             arena_state=arena_state,
         )
+        if screen is not window:
+            pygame.transform.smoothscale(screen, win_size, window)
         pygame.display.flip()
         clock.tick(args.fps)
 

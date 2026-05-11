@@ -19,8 +19,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a short automated duel between two Ataxx checkpoints.",
     )
-    parser.add_argument("--checkpoint-a", required=True, help="Path to checkpoint A (.pt/.ckpt).")
-    parser.add_argument("--checkpoint-b", required=True, help="Path to checkpoint B (.pt/.ckpt).")
+    parser.add_argument("--checkpoint-a", required=True, help="Codename, version, or path for A.")
+    parser.add_argument("--checkpoint-b", required=True, help="Codename, version, or path for B.")
     parser.add_argument("--games", type=int, default=8, help="Number of games to play.")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--mcts-sims", "--sims", type=int, default=96)
@@ -47,13 +47,10 @@ def main() -> None:
         play_checkpoint_match_results,
         summarize_match_results,
     )
+    from model.registry import resolve as resolve_checkpoint
 
-    checkpoint_a = Path(args.checkpoint_a)
-    checkpoint_b = Path(args.checkpoint_b)
-    if not checkpoint_a.exists():
-        raise FileNotFoundError(f"Checkpoint A not found: {checkpoint_a}")
-    if not checkpoint_b.exists():
-        raise FileNotFoundError(f"Checkpoint B not found: {checkpoint_b}")
+    checkpoint_a = resolve_checkpoint(args.checkpoint_a)
+    checkpoint_b = resolve_checkpoint(args.checkpoint_b)
 
     device = _resolve_device(args.device)
     results = play_checkpoint_match_results(

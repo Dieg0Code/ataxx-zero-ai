@@ -76,25 +76,38 @@ def draw_top_panel(
     mode: str,
     font_title: pygame.font.Font,
     font_body: pygame.font.Font,
+    speed_mult: float = 1.0,
+    paused: bool = False,
+    stats_record: dict[str, int] | None = None,
 ) -> None:
-    inner = _draw_panel_frame(surf, rect, "ATAXX ARENA", font_title)
+    inner = _draw_panel_frame(surf, rect, "PARTIDA", font_title)
     line_h = font_body.get_linesize()
     y = inner.top
+    mode_es = {"play": "humano vs IA", "spectate": "IA vs IA"}.get(mode, mode)
+    color_turn = PIECE_P1 if turn_player == 1 else PIECE_P2
+    name_turn = "ROJO (P1)" if turn_player == 1 else "AZUL (P2)"
     rows = [
-        (f"Mode    : {mode}", TEXT_MAIN),
-        (f"Turn #  : {turn_index}", TEXT_MAIN),
-        (
-            f"To move : {'P1 (RED)' if turn_player == 1 else 'P2 (BLUE)'}",
-            PIECE_P1 if turn_player == 1 else PIECE_P2,
-        ),
+        (f"Modo    : {mode_es}", TEXT_MAIN),
+        (f"Turno   : {turn_index}", TEXT_MAIN),
+        (f"Mueve   : {name_turn}", color_turn),
     ]
     for text, color in rows:
         surf.blit(font_body.render(text, True, color), (inner.left, y))
         y += line_h
-    y += 6
-    # Score row
-    score_text = f"P1 {p1_name}: {p1_count:>2}    P2 {p2_name}: {p2_count:>2}"
+    y += 4
+    score_text = f"Piezas  : P1 {p1_count:>2}   -   P2 {p2_count:>2}"
     surf.blit(font_body.render(score_text, True, TEXT_DIM), (inner.left, y))
+    y += line_h
+    if stats_record is not None:
+        rec = stats_record
+        wld = f"Récord  : G {rec.get('w', 0)}  P {rec.get('l', 0)}  E {rec.get('d', 0)}"
+        surf.blit(font_body.render(wld, True, HUD_HISTORY_TEXT), (inner.left, y))
+    speed_str = f"{speed_mult:g}x"
+    state_str = f"PAUSA  vel {speed_str}" if paused else f"vel {speed_str}"
+    surf.blit(
+        font_body.render(state_str, True, PIECE_P1 if paused else TEXT_DIM),
+        (rect.right - 14 - font_body.size(state_str)[0], rect.top + 12),
+    )
 
 
 def draw_top_moves_panel(
@@ -107,21 +120,26 @@ def draw_top_moves_panel(
     font_title: pygame.font.Font,
     font_body: pygame.font.Font,
 ) -> None:
-    inner = _draw_panel_frame(surf, rect, "MCTS THINKING", font_title)
+    inner = _draw_panel_frame(surf, rect, "ANÁLISIS DE LA IA", font_title)
     line_h = font_body.get_linesize()
+    bar_color = PIECE_P1 if thinker_player == 1 else PIECE_P2
+    thinker_name = "ROJO" if thinker_player == 1 else ("AZUL" if thinker_player == -1 else "—")
+
+    # Header row explains what the bars mean.
+    header = "Jugadas más exploradas"
+    surf.blit(font_body.render(header, True, TEXT_DIM), (inner.left, inner.top))
+    y = inner.top + line_h + 2
 
     if not top_moves:
-        msg = "(no model agent moved yet)"
-        surf.blit(font_body.render(msg, True, TEXT_DIM), (inner.left, inner.top))
+        surf.blit(
+            font_body.render("(esperando que piense la IA…)", True, TEXT_DIM),
+            (inner.left, y),
+        )
         return
 
     total_visits = sum(visits for _, visits, _, _ in top_moves) or 1
-    bar_color = PIECE_P1 if thinker_player == 1 else PIECE_P2
-
-    # Top moves rows: notation | visit-bar | percent
-    y = inner.top
-    label_w = 80
-    right_w = 110
+    label_w = 90
+    right_w = 130
     bar_left = inner.left + label_w
     bar_right = inner.right - right_w
     bar_w = bar_right - bar_left
@@ -130,47 +148,45 @@ def draw_top_moves_panel(
         notation = move_notation(move)
         pct = visits / total_visits
 
-        # Notation
         surf.blit(font_body.render(notation, True, TEXT_MAIN), (inner.left, y))
 
-        # Bar
         bar_rect = pygame.Rect(bar_left, y + 4, bar_w, line_h - 8)
         pygame.draw.rect(surf, HUD_VISITS_BAR_DIM, bar_rect)
         fill = pygame.Rect(bar_rect.left, bar_rect.top, int(bar_w * pct), bar_rect.height)
         pygame.draw.rect(surf, bar_color, fill)
         pygame.draw.rect(surf, HUD_VISITS_BAR, bar_rect, width=1)
 
-        # Percent (value is already shown in the WIN PROB bar below)
-        right_text = f"{int(pct * 100):>3}% ({visits})"
+        right_text = f"{int(pct * 100):>3}% ({visits} sim)"
         right_surf = font_body.render(right_text, True, TEXT_DIM)
         surf.blit(right_surf, (bar_right + 6, y))
 
         y += line_h + 2
 
-    y += 8
-    # Value bar (-1..+1) representing root value for the player who just thought.
-    surf.blit(font_body.render("WIN PROB", True, TEXT_MAIN), (inner.left, y))
-    y += line_h
-    bar_h = 14
-    val_rect = pygame.Rect(inner.left, y, inner.width, bar_h)
-    pygame.draw.rect(surf, HUD_VALUE_BAR_BG, val_rect)
-    pygame.draw.rect(surf, PANEL_BORDER, val_rect, width=1)
-    # Center axis
-    cx = val_rect.centerx
-    pygame.draw.line(surf, HUD_VALUE_AXIS, (cx, val_rect.top), (cx, val_rect.bottom), width=1)
-    # Marker
-    clamped = max(-1.0, min(1.0, float(root_value)))
-    marker_x = int(cx + clamped * (val_rect.width // 2 - 2))
-    marker_color = bar_color
-    pygame.draw.rect(
-        surf,
-        marker_color,
-        pygame.Rect(marker_x - 3, val_rect.top - 2, 6, val_rect.height + 4),
-    )
-    y += bar_h + 4
+    y += 10
+    # Win probability is stored already normalized to P1 (ROJO) perspective.
+    # +1.0 means ROJO is winning, -1.0 means AZUL is winning.
+    clamped_p1 = max(-1.0, min(1.0, float(root_value)))
+    win_pct_p1 = (clamped_p1 + 1.0) * 50.0
+    if win_pct_p1 >= 60:
+        prob_color = PIECE_P1
+    elif win_pct_p1 <= 40:
+        prob_color = PIECE_P2
+    else:
+        prob_color = HUD_HISTORY_TEXT  # zona neutra → ámbar
+
     surf.blit(
-        font_body.render(f"value = {clamped:+.3f}", True, TEXT_DIM),
+        font_body.render("Probabilidad de ganar (ROJO):", True, TEXT_MAIN),
         (inner.left, y),
+    )
+    y += line_h
+    big = font_title.render(f"{win_pct_p1:5.1f}%", True, prob_color)
+    surf.blit(big, (inner.left, y))
+    # Side note: current thinker + raw value, kept tiny for science cred.
+    note = f"  según {thinker_name}   value = {clamped_p1:+.3f}"
+    note_surf = font_body.render(note, True, TEXT_DIM)
+    surf.blit(
+        note_surf,
+        (inner.left + big.get_width() + 4, y + (big.get_height() - note_surf.get_height()) // 2),
     )
 
 
@@ -183,7 +199,7 @@ def draw_history_panel(
     font_title: pygame.font.Font,
     font_body: pygame.font.Font,
 ) -> None:
-    inner = _draw_panel_frame(surf, rect, "HISTORY / EVAL", font_title)
+    inner = _draw_panel_frame(surf, rect, "HISTORIAL / EVALUACIÓN", font_title)
 
     # Split inner into left (move list) and right (eval graph) halves.
     half_w = inner.width // 2 - 6
@@ -253,6 +269,11 @@ def draw_hud(
     """Render the three HUD panels on the right side of the window."""
     from ui.arena.layout import hud_bottom_rect, hud_mid_rect, hud_top_rect
 
+    speed_mult_val = float(arena_state.get("speed_mult", 1.0))
+    paused_val = bool(arena_state.get("paused", False))
+    stats_rec = arena_state.get("stats_record")
+    if not isinstance(stats_rec, dict):
+        stats_rec = None
     draw_top_panel(
         surf,
         hud_top_rect(),
@@ -265,6 +286,9 @@ def draw_hud(
         mode=mode,
         font_title=font_title,
         font_body=font_body,
+        speed_mult=speed_mult_val,
+        paused=paused_val,
+        stats_record=stats_rec,
     )
     top_moves = arena_state.get("last_top_moves", [])
     if not isinstance(top_moves, list):

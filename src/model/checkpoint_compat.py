@@ -31,7 +31,37 @@ def extract_checkpoint_state_dict(payload: Mapping[str, Any]) -> dict[str, Any]:
     state_dict_obj = payload.get("state_dict")
     if not isinstance(state_dict_obj, dict):
         raise ValueError("Checkpoint dictionary must contain key 'state_dict'.")
-    return state_dict_obj
+    return strip_orig_mod_prefix(state_dict_obj)
+
+
+_LEGACY_POLICY_HEAD_PREFIXES = ("model.policy_head.", "policy_head.")
+
+
+def has_legacy_flat_policy_head(state_dict: Mapping[str, Any]) -> bool:
+    # Pre-spatial checkpoints used a flat MLP policy head (LayerNorm + Linear over
+    # flattened tokens). Current architecture uses src/dst projections + scorer.
+    return any(
+        key.startswith(prefix)
+        for key in state_dict
+        for prefix in _LEGACY_POLICY_HEAD_PREFIXES
+    )
+
+
+def drop_legacy_policy_head(state_dict: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in state_dict.items()
+        if not any(key.startswith(prefix) for prefix in _LEGACY_POLICY_HEAD_PREFIXES)
+    }
+
+
+def strip_orig_mod_prefix(state_dict: Mapping[str, Any]) -> dict[str, Any]:
+    # torch.compile wraps the inner module under `_orig_mod.`; strip it so the
+    # state_dict matches the uncompiled module's keys.
+    marker = "._orig_mod."
+    if not any(marker in key for key in state_dict):
+        return dict(state_dict)
+    return {key.replace(marker, "."): value for key, value in state_dict.items()}
 
 
 def adapt_state_dict_observation_channels(
@@ -83,7 +113,10 @@ def pad_observation_channels(
 
 __all__ = [
     "adapt_state_dict_observation_channels",
+    "drop_legacy_policy_head",
     "extract_checkpoint_state_dict",
     "extract_model_kwargs",
+    "has_legacy_flat_policy_head",
     "pad_observation_channels",
+    "strip_orig_mod_prefix",
 ]
