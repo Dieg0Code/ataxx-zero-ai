@@ -117,7 +117,7 @@ def main() -> None:
                 print(f"  eval     : composite={ev.get('composite', '?')}  " + "  ".join(bits))
             h2h = ev.get("head_to_head", {})
             if h2h:
-                print(f"  head-to-head: " + ", ".join(f"vs {k}: {v}" for k, v in h2h.items()))
+                print("  head-to-head: " + ", ".join(f"vs {k}: {v}" for k, v in h2h.items()))
 
 
 if __name__ == "__main__":

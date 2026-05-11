@@ -55,7 +55,7 @@ def main() -> None:
     from model.registry import list_models, update_eval
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from eval_checkpoint_vs_heuristic import evaluate_checkpoint_vs_levels  # noqa: E402
+    from eval_checkpoint_vs_heuristic import evaluate_checkpoint_vs_levels
 
     levels = [lv.strip() for lv in args.levels.split(",") if lv.strip()]
     only = {x.strip() for x in args.only.split(",") if x.strip()}
