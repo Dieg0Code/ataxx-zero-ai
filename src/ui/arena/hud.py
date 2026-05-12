@@ -79,10 +79,17 @@ def draw_top_panel(
     speed_mult: float = 1.0,
     paused: bool = False,
     stats_record: dict[str, int] | None = None,
+    tournament_banner: tuple[str, str] | None = None,
 ) -> None:
-    inner = _draw_panel_frame(surf, rect, "PARTIDA", font_title)
+    title = tournament_banner[0] if tournament_banner else "PARTIDA"
+    inner = _draw_panel_frame(surf, rect, title, font_title)
     line_h = font_body.get_linesize()
     y = inner.top
+    if tournament_banner is not None:
+        # Segunda linea del banner debajo del separador (en lugar de la primera fila).
+        subtitle_surf = font_body.render(tournament_banner[1], True, PANEL_ACCENT)
+        surf.blit(subtitle_surf, (inner.left, y))
+        y += line_h + 2
     mode_es = {"play": "humano vs IA", "spectate": "IA vs IA"}.get(mode, mode)
     color_turn = PIECE_P1 if turn_player == 1 else PIECE_P2
     name_turn = "ROJO (P1)" if turn_player == 1 else "AZUL (P2)"
@@ -274,6 +281,16 @@ def draw_hud(
     stats_rec = arena_state.get("stats_record")
     if not isinstance(stats_rec, dict):
         stats_rec = None
+    banner_raw = arena_state.get("tournament_banner")
+    banner: tuple[str, str] | None
+    if (
+        isinstance(banner_raw, tuple)
+        and len(banner_raw) == 2
+        and all(isinstance(s, str) for s in banner_raw)
+    ):
+        banner = banner_raw
+    else:
+        banner = None
     draw_top_panel(
         surf,
         hud_top_rect(),
@@ -289,6 +306,7 @@ def draw_hud(
         speed_mult=speed_mult_val,
         paused=paused_val,
         stats_record=stats_rec,
+        tournament_banner=banner,
     )
     top_moves = arena_state.get("last_top_moves", [])
     if not isinstance(top_moves, list):

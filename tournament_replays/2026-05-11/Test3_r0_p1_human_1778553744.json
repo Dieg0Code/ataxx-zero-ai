@@ -1,0 +1,32 @@
+{
+  "mode": "tournament",
+  "player_ai": "liga",
+  "starter": "human",
+  "mcts_sims": 80,
+  "tournament_id": "2026-05-11",
+  "player_human": "Test3",
+  "round_idx": 0,
+  "match_idx": 1,
+  "is_tiebreak": false,
+  "p1_label": "Test3",
+  "p2_label": "liga",
+  "n_moves": 31,
+  "winner": 1,
+  "forced_draw": false,
+  "value_dtype": "float32",
+  "shapes": {
+    "observations": [
+      31,
+      11,
+      7,
+      7
+    ],
+    "policies": [
+      31,
+      793
+    ],
+    "values": [
+      31
+    ]
+  }
+}

@@ -41,6 +41,8 @@ select = [
 # Scripts ad-hoc: CLIs, generadores PBIR, validadores. Relajamos annotations
 # de tipo y convenciones que solo pesan en código de librería.
 "scripts/*.py" = ["ANN001", "ANN201", "ANN202", "ANN204", "ANN401", "S603", "S607", "SIM105", "RUF013", "B007", "RUF003", "PTH123", "PTH118", "PTH113", "PTH107", "S202", "B904", "E702", "S110", "E741", "BLE001"]
+# Tests pytest-style: assert es la convención y random.Random es para reproducibilidad.
+"tests/*.py" = ["S101", "S311"]
 
 [tool.ruff.format]
 indent-style = "space"

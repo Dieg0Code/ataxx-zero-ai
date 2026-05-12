@@ -44,5 +44,9 @@ def model_move_with_diagnostics(
     diagnostics: dict[str, Any] = {
         "top_moves": MCTS.top_n_actions(root, n=3),
         "root_value": float(root.value()) if root is not None else 0.0,
+        # Visit distribution sobre ACTION_SPACE para que el ReplayRecorder la
+        # capture como policy target (mismo formato que self-play).
+        "policy": probs.astype(np.float32, copy=False),
+        "action_idx": action_idx,
     }
     return move, diagnostics
