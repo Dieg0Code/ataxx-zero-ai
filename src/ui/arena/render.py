@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import cast
 
 import numpy as np
@@ -10,6 +11,8 @@ from game.board import AtaxxBoard
 from game.types import Move
 from ui.arena.effects import Particle
 from ui.arena.layout import BOARD_PX, BS, CELL, PAD, WIN_H, WIN_W
+from ui.arena.pieces import blit_pixel_piece
+from ui.arena.postfx import apply_crt
 from ui.arena.theme import (
     BG_BOTTOM,
     BG_TOP,
@@ -32,7 +35,6 @@ from ui.arena.theme import (
     PREVIEW_GLOW,
     PREVIEW_MAIN,
     RECENT,
-    SCANLINE,
     SELECTION,
     TARGET,
     TARGET_CLONE,
@@ -44,8 +46,6 @@ from ui.arena.theme import (
     USE_PIXEL_PIECES,
     VIGNETTE,
 )
-from ui.arena.pieces import blit_pixel_piece
-from ui.arena.postfx import apply_crt
 
 PLAYER_1 = 1
 PLAYER_2 = -1
@@ -63,9 +63,6 @@ def _result_text(board: AtaxxBoard) -> str:
     if result == -1:
         return "Gana: P2 (AZUL)"
     return "Empate"
-
-
-import math
 
 
 def draw_arena(
@@ -168,7 +165,7 @@ def draw_arena(
                     scale = 0.55 + (0.45 * ease)
             radius = int((CELL // 3) * scale)
             radius = max(8, radius)
-            if v == PLAYER_1 or v == PLAYER_2:
+            if v in (PLAYER_1, PLAYER_2):
                 if flip_progress is not None:
                     # Squash horizontally to mimic a coin flip; render to a temp
                     # surface and smoothscale x to |cos(pi*progress)|.
@@ -276,6 +273,8 @@ def draw_arena(
         arena_state=arena_state or {},
         p1_name=str(p1_agent) + (f"({p1_level})" if p1_level != "-" else ""),
         p2_name=str(p2_agent) + (f"({p2_level})" if p2_level != "-" else ""),
+        p1_agent=str(p1_agent),
+        p2_agent=str(p2_agent),
         p1_count=p1_count,
         p2_count=p2_count,
         turn_player=int(board.current_player),
