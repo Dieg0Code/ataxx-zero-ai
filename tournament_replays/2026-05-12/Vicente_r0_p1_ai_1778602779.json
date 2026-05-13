@@ -1,0 +1,32 @@
+{
+  "mode": "tournament",
+  "player_ai": "liga",
+  "starter": "ai",
+  "mcts_sims": 800,
+  "tournament_id": "2026-05-12",
+  "player_human": "Vicente",
+  "round_idx": 0,
+  "match_idx": 1,
+  "is_tiebreak": false,
+  "p1_label": "liga",
+  "p2_label": "Vicente",
+  "n_moves": 79,
+  "winner": 1,
+  "forced_draw": false,
+  "value_dtype": "float32",
+  "shapes": {
+    "observations": [
+      79,
+      11,
+      7,
+      7
+    ],
+    "policies": [
+      79,
+      793
+    ],
+    "values": [
+      79
+    ]
+  }
+}

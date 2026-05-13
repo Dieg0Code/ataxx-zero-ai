@@ -1,0 +1,32 @@
+{
+  "mode": "tournament",
+  "player_ai": "liga",
+  "starter": "human",
+  "mcts_sims": 800,
+  "tournament_id": "2026-05-12",
+  "player_human": "Felipe",
+  "round_idx": 1,
+  "match_idx": 2,
+  "is_tiebreak": false,
+  "p1_label": "Felipe",
+  "p2_label": "liga",
+  "n_moves": 81,
+  "winner": 1,
+  "forced_draw": false,
+  "value_dtype": "float32",
+  "shapes": {
+    "observations": [
+      81,
+      11,
+      7,
+      7
+    ],
+    "policies": [
+      81,
+      793
+    ],
+    "values": [
+      81
+    ]
+  }
+}
