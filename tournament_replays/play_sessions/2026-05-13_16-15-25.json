@@ -1,0 +1,34 @@
+{
+  "mode": "play",
+  "player_ai": "model",
+  "starter": "human",
+  "mcts_sims": 800,
+  "tournament_id": null,
+  "player_human": "human",
+  "round_idx": null,
+  "match_idx": null,
+  "is_tiebreak": false,
+  "p1_label": "human",
+  "p2_label": "model",
+  "n_moves": 100,
+  "winner": -1,
+  "forced_draw": false,
+  "value_dtype": "float32",
+  "shapes": {
+    "observations": [
+      100,
+      11,
+      7,
+      7
+    ],
+    "policies": [
+      100,
+      793
+    ],
+    "values": [
+      100
+    ]
+  },
+  "nickname": "human replay, alumnos 4to medio, late game",
+  "quality_tag": "late_game"
+}

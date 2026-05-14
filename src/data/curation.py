@@ -7,11 +7,12 @@ from typing import Any, cast
 
 import numpy as np
 
+from data.replay_tags import TAG_ROLES, normalize_replay_tag
 from game.actions import ACTION_SPACE
 from game.constants import BOARD_SIZE, OBSERVATION_CHANNELS
 
-QUALITY_EXCLUDE = {"bad", "bug"}
-QUALITY_PRIORITIZE = {"good", "brilliant", "late_game", "demo"}
+QUALITY_EXCLUDE = {tag for tag, role in TAG_ROLES.items() if role == "exclude"}
+QUALITY_PRIORITIZE = {tag for tag, role in TAG_ROLES.items() if role == "prioritize"}
 
 
 @dataclass(frozen=True)
@@ -146,7 +147,7 @@ def curate_npz_paths(
         n = min(len(observations), len(policies), len(values))
         total_in += n
         source_report["input_examples"] = n
-        quality_tag = str(metadata.get("quality_tag", "")).strip().lower()
+        quality_tag = normalize_replay_tag(metadata.get("quality_tag", ""))
         is_human = _is_human_source(metadata, human_path_hint in path.as_posix())
         useful_human_draw = is_human and quality_tag in QUALITY_PRIORITIZE
         if quality_tag in QUALITY_EXCLUDE or (

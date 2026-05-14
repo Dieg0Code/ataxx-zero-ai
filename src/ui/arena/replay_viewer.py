@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pygame
 
+from data.replay_tags import TAG_VALUES, normalize_replay_tag, replay_tag_label
 from game.actions import ACTION_SPACE
 from game.board import AtaxxBoard
 from game.constants import BOARD_SIZE, EMPTY, PLAYER_1, PLAYER_2
@@ -110,7 +111,7 @@ _SPANISH_MONTHS = (
     "Diciembre",
 )
 _LIBRARY_VISIBLE_ROWS = 8
-_QUALITY_TAGS = ("", "good", "brilliant", "late_game", "demo", "bad", "bug")
+_QUALITY_TAGS = TAG_VALUES
 
 
 def resolve_replay_paths(path: str | Path) -> ReplayPaths:
@@ -187,7 +188,7 @@ def cycle_quality_tag(path: str | Path) -> str:
     metadata: dict[str, Any] = {}
     if json_path.is_file():
         metadata = json.loads(json_path.read_text(encoding="utf-8"))
-    current = str(metadata.get("quality_tag", "")).strip()
+    current = normalize_replay_tag(metadata.get("quality_tag", ""))
     try:
         next_idx = (_QUALITY_TAGS.index(current) + 1) % len(_QUALITY_TAGS)
     except ValueError:
@@ -433,7 +434,9 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
         anim_start_ms: int | None = None
         edit_kind: str | None = None
         edit_text = ""
+        edit_cursor = 0
         running = True
+        pygame.key.set_repeat(280, 35)
         while running:
             now_ms = pygame.time.get_ticks()
             for event in pygame.event.get():
@@ -444,6 +447,7 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
                         if event.key == pygame.K_ESCAPE:
                             edit_kind = None
                             edit_text = ""
+                            edit_cursor = 0
                         elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                             if items:
                                 key = "nickname" if edit_kind == "nickname" else "event"
@@ -452,10 +456,13 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
                                 selected = min(selected, max(0, len(items) - 1))
                             edit_kind = None
                             edit_text = ""
-                        elif event.key == pygame.K_BACKSPACE:
-                            edit_text = edit_text[:-1]
-                        elif event.unicode and event.unicode.isprintable():
-                            edit_text += event.unicode
+                            edit_cursor = 0
+                        else:
+                            edit_text, edit_cursor = _edit_text_key(
+                                text=edit_text,
+                                cursor=edit_cursor,
+                                event=event,
+                            )
                     continue
                 elif mode == "viewer" and active_replay is not None:
                     if event.type == pygame.KEYDOWN:
@@ -491,6 +498,14 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
                             speed = 2.0
                         elif event.key == pygame.K_4:
                             speed = 4.0
+                        elif event.key == pygame.K_t:
+                            cycle_quality_tag(active_replay.path)
+                            active_replay = load_replay(active_replay.path)
+                            items = discover_replays(root)
+                            for idx, item in enumerate(items):
+                                if item.npz_path == active_replay.path:
+                                    selected = idx
+                                    break
                     continue
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_q:
@@ -513,9 +528,11 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
                     elif event.key == pygame.K_n and items:
                         edit_kind = "nickname"
                         edit_text = str(items[selected].metadata.get("nickname", ""))
+                        edit_cursor = len(edit_text)
                     elif event.key == pygame.K_e and items:
                         edit_kind = "event"
                         edit_text = str(items[selected].metadata.get("event", ""))
+                        edit_cursor = len(edit_text)
                     elif event.key == pygame.K_t and items:
                         cycle_quality_tag(items[selected].npz_path)
                         items = discover_replays(root)
@@ -560,6 +577,7 @@ def run_replay_library(root: str | Path = "tournament_replays") -> None:
                     offset=offset,
                     edit_kind=edit_kind,
                     edit_text=edit_text,
+                    edit_cursor=edit_cursor,
                     font=font,
                     small=small,
                 )
@@ -595,6 +613,7 @@ def _draw_library_scene(
     offset: int,
     edit_kind: str | None,
     edit_text: str,
+    edit_cursor: int,
     font: pygame.font.Font,
     small: pygame.font.Font,
 ) -> None:
@@ -645,19 +664,49 @@ def _draw_library_scene(
             subtitle = f"{event.strip()} | {item.subtitle}"
         else:
             subtitle = item.subtitle
-        quality_tag = str(item.metadata.get("quality_tag", "")).strip()
+        quality_tag = normalize_replay_tag(item.metadata.get("quality_tag", ""))
         if quality_tag != "":
-            subtitle = f"{quality_tag} | {subtitle}"
+            subtitle = f"{replay_tag_label(quality_tag)} | {subtitle}"
         subtitle = _ellipsize_text(small, subtitle, right_w)
         surf.blit(small.render(subtitle, True, TEXT_DIM), (right_x, row_rect.top + 37))
         rel = item.npz_path.as_posix()
         rel = _ellipsize_text(small, rel, 320)
         surf.blit(small.render(rel, True, TEXT_DIM), (left_x, row_rect.top + 36))
 
-    help_text = "Enter ver | n apodo | e evento | t calidad | r recargar | q salir"
+    help_text = "Enter ver | n apodo | e evento | t tag estandar | r recargar | q salir"
     surf.blit(small.render(help_text, True, TEXT_DIM), (x, WIN_H - 34))
     if edit_kind is not None:
-        _draw_text_editor(surf, kind=edit_kind, text=edit_text, font=font, small=small)
+        _draw_text_editor(
+            surf,
+            kind=edit_kind,
+            text=edit_text,
+            cursor=edit_cursor,
+            font=font,
+            small=small,
+        )
+
+
+def _edit_text_key(*, text: str, cursor: int, event: pygame.event.Event) -> tuple[str, int]:
+    cursor = max(0, min(cursor, len(text)))
+    if event.key == pygame.K_BACKSPACE:
+        if cursor == 0:
+            return text, cursor
+        return text[: cursor - 1] + text[cursor:], cursor - 1
+    if event.key == pygame.K_DELETE:
+        if cursor >= len(text):
+            return text, cursor
+        return text[:cursor] + text[cursor + 1 :], cursor
+    if event.key == pygame.K_LEFT:
+        return text, max(0, cursor - 1)
+    if event.key == pygame.K_RIGHT:
+        return text, min(len(text), cursor + 1)
+    if event.key == pygame.K_HOME:
+        return text, 0
+    if event.key == pygame.K_END:
+        return text, len(text)
+    if event.unicode and event.unicode.isprintable():
+        return text[:cursor] + event.unicode + text[cursor:], cursor + len(event.unicode)
+    return text, cursor
 
 
 def _scaled_window_size() -> tuple[int, int]:
@@ -699,6 +748,7 @@ def _draw_text_editor(
     *,
     kind: str,
     text: str,
+    cursor: int,
     font: pygame.font.Font,
     small: pygame.font.Font,
 ) -> None:
@@ -713,10 +763,29 @@ def _draw_text_editor(
     input_rect = pygame.Rect(box.left + 24, box.top + 72, box.width - 48, 44)
     pygame.draw.rect(surf, HUD_VALUE_BAR_BG, input_rect)
     pygame.draw.rect(surf, PANEL_BORDER, input_rect, width=1)
-    shown = text[-70:]
-    surf.blit(font.render(shown + "_", True, TEXT_MAIN), (input_rect.left + 10, input_rect.top + 4))
-    hint = "Enter guardar | Esc cancelar | dejar vacio borra el campo"
+    shown, shown_cursor = _visible_editor_text(text=text, cursor=cursor, max_chars=70)
+    text_x = input_rect.left + 10
+    text_y = input_rect.top + 4
+    surf.blit(font.render(shown, True, TEXT_MAIN), (text_x, text_y))
+    cursor_x = text_x + font.size(shown[:shown_cursor])[0]
+    pygame.draw.line(
+        surf,
+        TEXT_MAIN,
+        (cursor_x, input_rect.top + 8),
+        (cursor_x, input_rect.bottom - 8),
+        width=2,
+    )
+    hint = "Enter guardar | Esc cancelar | flechas mover | Backspace/Delete borrar"
     surf.blit(small.render(hint, True, TEXT_DIM), (box.left + 24, box.bottom - 34))
+
+
+def _visible_editor_text(*, text: str, cursor: int, max_chars: int) -> tuple[str, int]:
+    cursor = max(0, min(cursor, len(text)))
+    if len(text) <= max_chars:
+        return text, cursor
+    start = max(0, min(cursor - max_chars + 1, len(text) - max_chars))
+    end = start + max_chars
+    return text[start:end], cursor - start
 
 
 def _draw_replay_scene(
@@ -958,6 +1027,7 @@ def _draw_replay_hud(
         ("Jugada", "final" if frame.is_final else move_notation(frame.move)),
         ("Policy", f"{frame.policy_prob * 100:4.1f}%"),
         ("Target", f"{frame.value:+.2f}"),
+        ("Tag", replay_tag_label(meta.get("quality_tag", ""))),
     ]
     for label, value in rows:
         color = PIECE_P1 if value == "ROJO" else (PIECE_P2 if value == "AZUL" else TEXT_MAIN)
@@ -983,6 +1053,7 @@ def _draw_replay_hud(
         "left/right o a/s: paso",
         "home/end: inicio/final",
         "1/2/4 velocidad",
+        "t tag estandar",
         "p screenshot   q salir",
     ]
     for text in controls:

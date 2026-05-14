@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pygame
 
 from game.actions import ACTION_SPACE
 from game.board import AtaxxBoard
@@ -11,6 +12,8 @@ from game.constants import PLAYER_1, PLAYER_2
 from ui.arena.replay_recorder import one_hot_policy
 from ui.arena.replay_viewer import (
     ReplayFrame,
+    _edit_text_key,
+    _visible_editor_text,
     action_from_policy,
     active_animation_done,
     cycle_quality_tag,
@@ -158,9 +161,64 @@ def test_cycle_quality_tag_updates_replay_metadata(tmp_path: Path) -> None:
         values=np.zeros((1,), dtype=np.float32),
     )
 
-    assert cycle_quality_tag(npz_path) == "good"
+    assert cycle_quality_tag(npz_path) == "human_instructive"
     payload = json.loads(npz_path.with_suffix(".json").read_text(encoding="utf-8"))
-    assert payload["quality_tag"] == "good"
+    assert payload["quality_tag"] == "human_instructive"
+
+
+def test_cycle_quality_tag_normalizes_legacy_tags(tmp_path: Path) -> None:
+    npz_path = tmp_path / "game.npz"
+    np.savez_compressed(
+        npz_path,
+        observations=np.zeros((1, 11, 7, 7), dtype=np.float32),
+        policies=np.zeros((1, ACTION_SPACE.num_actions), dtype=np.float32),
+        values=np.zeros((1,), dtype=np.float32),
+    )
+    npz_path.with_suffix(".json").write_text(
+        json.dumps({"quality_tag": "good"}),
+        encoding="utf-8",
+    )
+
+    assert cycle_quality_tag(npz_path) == "brilliant"
+    payload = json.loads(npz_path.with_suffix(".json").read_text(encoding="utf-8"))
+    assert payload["quality_tag"] == "brilliant"
+
+
+def test_edit_text_key_supports_cursor_insert_and_delete() -> None:
+    text, cursor = _edit_text_key(
+        text="salto centro",
+        cursor=6,
+        event=pygame.event.Event(pygame.KEYDOWN, key=pygame.K_x, unicode="al "),
+    )
+    assert (text, cursor) == ("salto al centro", 9)
+
+    text, cursor = _edit_text_key(
+        text=text,
+        cursor=cursor,
+        event=pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT, unicode=""),
+    )
+    assert cursor == 8
+
+    text, cursor = _edit_text_key(
+        text=text,
+        cursor=cursor,
+        event=pygame.event.Event(pygame.KEYDOWN, key=pygame.K_BACKSPACE, unicode=""),
+    )
+    assert (text, cursor) == ("salto a centro", 7)
+
+    text, cursor = _edit_text_key(
+        text=text,
+        cursor=cursor,
+        event=pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DELETE, unicode=""),
+    )
+    assert (text, cursor) == ("salto acentro", 7)
+
+
+def test_visible_editor_text_keeps_cursor_inside_window() -> None:
+    shown, shown_cursor = _visible_editor_text(text="abcdefghijkl", cursor=10, max_chars=5)
+
+    assert shown == "ghijk"
+    assert shown_cursor == 4
 
 
 def test_replay_render_frame_animates_preview_then_applies_move() -> None:

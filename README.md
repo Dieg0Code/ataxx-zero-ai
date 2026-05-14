@@ -109,6 +109,56 @@ uv run python scripts/play_pygame.py --mode spectate \
 
 El HUD lateral muestra en tiempo real las top-3 jugadas que considera la IA con barras de visitas MCTS, la probabilidad de victoria de ROJO en porcentaje grande, historial de jugadas y un mini-gráfico de evaluación. El récord W/L/D persiste entre sesiones en `~/.ataxx_arena_stats.json`.
 
+### Biblioteca de replays y tagging
+
+La arena guarda partidas en `tournament_replays/` como pares `.npz` + `.json`. Para abrir la biblioteca:
+
+```bash
+uv run python scripts/watch_replay.py
+```
+
+Para abrir una partida específica:
+
+```bash
+uv run python scripts/watch_replay.py --replay tournament_replays/play_sessions/2026-05-13_15-35-44.npz
+```
+
+Controles de la biblioteca:
+
+| Tecla   | Acción                                      |
+|---------|---------------------------------------------|
+| `Enter` | Ver replay                                  |
+| `n`     | Editar apodo corto de la partida            |
+| `e`     | Editar evento/contexto, por ejemplo `AIEP`  |
+| `t`     | Ciclar tag estándar de entrenamiento        |
+| `r`     | Recargar lista                              |
+| `q`     | Salir                                       |
+
+Controles dentro del replay:
+
+| Tecla       | Acción                         |
+|-------------|--------------------------------|
+| `space`     | Play / pausa                   |
+| `left/right` o `a/s` | Retroceder / avanzar paso |
+| `home/end`  | Inicio / final                 |
+| `1` `2` `4` | Velocidad                      |
+| `t`         | Ciclar tag estándar            |
+| `Esc`       | Volver a la biblioteca         |
+
+Los tags son cerrados para que la curación sea reproducible:
+
+| Tag | Uso en datos |
+|-----|--------------|
+| `human_instructive` | Partida humana útil; se prioriza en pretraining. |
+| `brilliant` | Partida o secuencia especialmente buena; se prioriza. |
+| `late_game` | Final interesante; se prioriza. |
+| `ai_mistake` | Error visible de la IA; queda para análisis, sin priorizar. |
+| `demo` | Partida buena para mostrar; se prioriza. |
+| `review` | Pendiente de revisar; uso neutral. |
+| `discard` | No entra al dataset curado. |
+
+No es necesario etiquetar todo antes de entrenar. Las partidas sin tag pasan por filtros automáticos y entran con peso neutral; marca solo las partidas que recuerdes como útiles, raras o descartables.
+
 ---
 
 ## Evaluar checkpoints (sin UI, headless)
