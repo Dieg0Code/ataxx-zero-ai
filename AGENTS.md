@@ -31,6 +31,8 @@ Use 4-space indentation, double quotes, and Ruff formatting conventions. Ruff ta
 
 Name modules and functions in `snake_case`, classes in `PascalCase`, constants in `UPPER_SNAKE_CASE`, and tests as `test_<behavior>.py`.
 
+Reuse existing systems before adding parallel implementations. In particular, UI work in `src/ui/arena/` should reuse the arena renderer, HUD, layout, and theme when it is showing the same game board or pieces; only add specialized overlays or state where the behavior genuinely differs.
+
 ## Testing Guidelines
 
 Use pytest/unittest-compatible tests under `tests/`. Add focused tests near the affected subsystem: rules in `test_board_rules.py`, MCTS in `test_mcts_numerics.py`, training behavior in `test_training_*.py`, inference in `test_inference_*.py`, and arena runtime in `test_ui_arena_model_runtime.py`. For numerical or training changes, use deterministic seeds or small fixtures.

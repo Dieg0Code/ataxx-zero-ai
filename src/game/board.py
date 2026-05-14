@@ -37,6 +37,7 @@ def _build_radius2_targets() -> tuple[tuple[tuple[int, int], ...], ...]:
 
 
 _RADIUS2_TARGETS = _build_radius2_targets()
+HALF_MOVE_OBS_SCALE = 256.0
 
 
 class AtaxxBoard:
@@ -65,7 +66,7 @@ class AtaxxBoard:
             self.empty_count = int(np.sum(self.grid == EMPTY))
 
         self.current_player: Player = player
-        # Variant anti-loop rule: hard cap on total half-moves.
+        # Total half-moves are exposed to the model as game phase.
         self.half_moves = 0
         # Track repeated positions including side-to-move.
         self._position_counts: Counter[tuple[int, bytes]] = Counter()
@@ -201,16 +202,13 @@ class AtaxxBoard:
         End conditions:
         1) board is full,
         2) one side has no pieces,
-        3) half-move cap reached (variant anti-loop rule),
+        3) threefold repetition,
         4) both players have no legal moves.
         """
         if self.empty_count == 0:
             return True
 
         if self.p1_count == 0 or self.p2_count == 0:
-            return True
-
-        if self.half_moves >= 100:
             return True
 
         if max(self._position_counts.values(), default=0) >= 3:
@@ -247,7 +245,7 @@ class AtaxxBoard:
         """Expose loop/cap draws so training can punish non-terminating play."""
         if not self.is_game_over():
             return False
-        return self.half_moves >= 100 or max(self._position_counts.values(), default=0) >= 3
+        return max(self._position_counts.values(), default=0) >= 3
 
     def get_canonical_form(self) -> np.ndarray:
         """
@@ -301,7 +299,7 @@ class AtaxxBoard:
         obs[2] = np.asarray(self.grid == EMPTY, dtype=np.float32)
         obs[3] = np.full(
             (BOARD_SIZE, BOARD_SIZE),
-            min(1.0, float(self.half_moves) / 100.0),
+            min(1.0, float(self.half_moves) / HALF_MOVE_OBS_SCALE),
             dtype=np.float32,
         )
         # Threefold draw depends on how many times the current position has already

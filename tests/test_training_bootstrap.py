@@ -7,6 +7,7 @@ import numpy as np
 from game.actions import ACTION_SPACE
 from game.constants import BOARD_SIZE, OBSERVATION_CHANNELS
 from training.bootstrap import generate_imitation_data, history_to_examples
+from training.loop_runtime import load_npz_training_examples
 
 
 class TestTrainingBootstrap(unittest.TestCase):
@@ -53,6 +54,25 @@ class TestTrainingBootstrap(unittest.TestCase):
         draw = history_to_examples(history, winner=0)
         self.assertEqual(draw[0][2], 0.0)
         self.assertEqual(draw[1][2], 0.0)
+
+    def test_load_npz_training_examples_rejects_empty_dataset(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty.npz"
+            np.savez_compressed(
+                path,
+                observations=np.zeros(
+                    (0, OBSERVATION_CHANNELS, BOARD_SIZE, BOARD_SIZE),
+                    dtype=np.float32,
+                ),
+                policies=np.zeros((0, ACTION_SPACE.num_actions), dtype=np.float32),
+                values=np.zeros((0,), dtype=np.float32),
+            )
+
+            with self.assertRaises(ValueError):
+                load_npz_training_examples(str(path))
 
 
 if __name__ == "__main__":

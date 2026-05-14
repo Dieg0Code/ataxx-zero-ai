@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytorch_lightning as pl
@@ -153,6 +154,22 @@ def build_val_loader(
     )
 
 
+def load_npz_training_examples(path: str) -> list[TrainingExample]:
+    import numpy as np
+
+    dataset_path = Path(path)
+    if not dataset_path.is_file():
+        raise FileNotFoundError(f"Pretrain dataset not found: {dataset_path}")
+    data = np.load(dataset_path)
+    observations = data["observations"].astype(np.float32, copy=False)
+    policies = data["policies"].astype(np.float32, copy=False)
+    values = data["values"].astype(np.float32, copy=False)
+    examples = list(zip(observations, policies, values, strict=True))
+    if len(examples) == 0:
+        raise ValueError(f"Pretrain dataset is empty: {dataset_path}")
+    return examples
+
+
 def fit_with_ddp_fallback(
     *,
     system: AtaxxZero,
@@ -223,6 +240,65 @@ def fit_with_ddp_fallback(
         trainer_strategy,
         trainer_precision,
     )
+
+
+def run_curated_pretrain_if_needed(
+    *,
+    start_iteration: int,
+    system: AtaxxZero,
+    trainer_accelerator: str,
+    trainer_devices: int,
+    trainer_strategy: str,
+    trainer_precision: TrainerPrecision,
+    checkpoint_callback: ModelCheckpoint,
+    lr_monitor: LearningRateMonitor,
+    logger: Logger,
+    device: str,
+    optimizer_transfer: OptimizerStateTransfer,
+    epoch_pulse: EpochPulseCallback,
+) -> tuple[str, int, str, TrainerPrecision]:
+    dataset_path = cfg_str("pretrain_dataset_path").strip()
+    pretrain_epochs = cfg_int("pretrain_epochs")
+    if start_iteration != 0 or dataset_path == "" or pretrain_epochs <= 0:
+        return trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision
+
+    from data.dataset import split_train_val_examples
+
+    examples = load_npz_training_examples(dataset_path)
+    train_examples, val_examples = split_train_val_examples(
+        all_examples=examples,
+        val_split=cfg_float("val_split"),
+        shuffle=cfg_bool("shuffle_train_val_split"),
+        seed=cfg_int("seed"),
+    )
+    log(
+        f"Curated pretrain: {len(train_examples)} train / {len(val_examples)} val "
+        f"from {dataset_path}",
+    )
+    train_loader = build_train_loader(train_examples, device=device)
+    val_loader = build_val_loader(val_examples, device=device)
+    (
+        _pretrain_trainer,
+        trainer_accelerator,
+        trainer_devices,
+        trainer_strategy,
+        trainer_precision,
+    ) = fit_with_ddp_fallback(
+        system=system,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=pretrain_epochs,
+        trainer_accelerator=trainer_accelerator,
+        trainer_devices=trainer_devices,
+        trainer_strategy=trainer_strategy,
+        trainer_precision=trainer_precision,
+        checkpoint_callback=checkpoint_callback,
+        lr_monitor=lr_monitor,
+        logger=logger,
+        optimizer_transfer=optimizer_transfer,
+        epoch_pulse=epoch_pulse,
+    )
+    return trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision
 
 
 def run_warmup_if_needed(
@@ -308,8 +384,10 @@ __all__ = [
     "build_train_loader",
     "build_val_loader",
     "fit_with_ddp_fallback",
+    "load_npz_training_examples",
     "prepare_train_val_examples",
     "resolve_eval_levels",
     "restore_system_from_checkpoint",
+    "run_curated_pretrain_if_needed",
     "run_warmup_if_needed",
 ]

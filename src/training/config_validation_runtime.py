@@ -52,7 +52,25 @@ def validate_bootstrap_warmup_config(
     )
 
 
+def validate_absolute_eval_gate_config(
+    *,
+    cfg_float: Callable[[str], float],
+    cfg_int: Callable[[str], int],
+    cfg_str: Callable[[str], str],
+) -> None:
+    for key in ("baseline_composite", "baseline_h2h_min_score"):
+        if not 0.0 <= cfg_float(key) <= 1.0:
+            raise ValueError(f"CONFIG['{key}'] must be in [0, 1].")
+    if cfg_int("eval_absolute_patience") < 0:
+        raise ValueError("CONFIG['eval_absolute_patience'] must be >= 0.")
+    if cfg_float("eval_absolute_delta") < 0.0:
+        raise ValueError("CONFIG['eval_absolute_delta'] must be >= 0.")
+    if cfg_str("eval_absolute_action") not in {"abort", "restore_best", "warn"}:
+        raise ValueError("CONFIG['eval_absolute_action'] must be abort, restore_best, or warn.")
+
+
 __all__ = [
+    "validate_absolute_eval_gate_config",
     "validate_bootstrap_warmup_config",
     "validate_reward_shaping_config",
     "validate_supported_heuristic_csv",

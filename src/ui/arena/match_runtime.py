@@ -328,6 +328,7 @@ def play_single_match(
         "move_history": [],
         "speed_mult": 1.0,
         "paused": False,
+        "brain_tab": 0,
         "stats_record": (
             arena_stats.get_record(p1_label, p2_label) if record_arena_stats else {"w": 0, "l": 0, "d": 0}
         ),
@@ -420,6 +421,9 @@ def play_single_match(
                     arena_state["paused"] = paused
                 elif event.key == pygame.K_s and paused:
                     step_once = True
+                elif event.key == pygame.K_TAB:
+                    current_tab = int(cast(int, arena_state.get("brain_tab", 0)))
+                    arena_state["brain_tab"] = (current_tab + 1) % 3
                 elif event.key == pygame.K_1:
                     speed_mult = 1.0
                     arena_state["speed_mult"] = speed_mult
@@ -538,6 +542,7 @@ def play_single_match(
                         raw_value if player == PLAYER_1 else -raw_value
                     )
                     arena_state["last_thinker"] = player
+                    arena_state["last_brain"] = diagnostics.get("brain")
                 pending_move = move
                 preview_started_at = now_ms
                 preview_dur = max(40, int(MOVE_PREVIEW_MS_AI / max(0.5, speed_mult)))

@@ -105,6 +105,56 @@ class TestTrainingConfigRuntime(unittest.TestCase):
         self.assertAlmostEqual(float(CONFIG["eval_regression_delta"]), 0.04)
         self.assertEqual(int(CONFIG["eval_regression_patience"]), 3)
 
+    def test_curated_pretrain_flags_are_applied(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "train.py",
+                "--pretrain-dataset",
+                "data/curated/v10_pretrain.npz",
+                "--pretrain-epochs",
+                "3",
+            ],
+        ):
+            args = parse_args()
+
+        apply_cli_overrides(args)
+
+        self.assertEqual(str(CONFIG["pretrain_dataset_path"]), "data/curated/v10_pretrain.npz")
+        self.assertEqual(int(CONFIG["pretrain_epochs"]), 3)
+
+    def test_absolute_eval_gate_flags_are_applied(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "train.py",
+                "--baseline-checkpoint",
+                "liga",
+                "--baseline-composite",
+                "0.81",
+                "--baseline-h2h-min-score",
+                "0.45",
+                "--eval-absolute-patience",
+                "2",
+                "--eval-absolute-delta",
+                "0.03",
+                "--eval-absolute-action",
+                "abort",
+            ],
+        ):
+            args = parse_args()
+
+        apply_cli_overrides(args)
+
+        self.assertEqual(str(CONFIG["baseline_checkpoint"]), "liga")
+        self.assertAlmostEqual(float(CONFIG["baseline_composite"]), 0.81)
+        self.assertAlmostEqual(float(CONFIG["baseline_h2h_min_score"]), 0.45)
+        self.assertEqual(int(CONFIG["eval_absolute_patience"]), 2)
+        self.assertAlmostEqual(float(CONFIG["eval_absolute_delta"]), 0.03)
+        self.assertEqual(str(CONFIG["eval_absolute_action"]), "abort")
+
 
 if __name__ == "__main__":
     unittest.main()

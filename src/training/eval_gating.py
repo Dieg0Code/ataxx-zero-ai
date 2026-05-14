@@ -23,4 +23,36 @@ def compute_regression_gate(
     return next_streak, should_restore
 
 
-__all__ = ["compute_regression_gate"]
+def compute_absolute_score_gate(
+    *,
+    current_score: float,
+    baseline_score: float,
+    delta: float,
+    current_streak: int,
+    patience: int,
+) -> tuple[int, bool]:
+    if patience <= 0:
+        return 0, False
+    threshold = baseline_score - max(0.0, delta)
+    next_streak = current_streak + 1 if current_score < threshold else 0
+    return next_streak, next_streak >= patience
+
+
+def compute_h2h_gate(
+    *,
+    h2h_score: float,
+    min_score: float,
+    current_streak: int,
+    patience: int,
+) -> tuple[int, bool]:
+    if patience <= 0:
+        return 0, False
+    next_streak = current_streak + 1 if h2h_score < min_score else 0
+    return next_streak, next_streak >= patience
+
+
+__all__ = [
+    "compute_absolute_score_gate",
+    "compute_h2h_gate",
+    "compute_regression_gate",
+]

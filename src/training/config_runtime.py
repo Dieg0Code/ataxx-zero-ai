@@ -8,7 +8,14 @@ from typing import Literal, cast
 import numpy as np
 
 from agents.heuristic import HEURISTIC_LEVELS, is_supported_heuristic_level
+from training.config_cli_runtime import (
+    add_absolute_eval_gate_args,
+    add_curated_pretrain_args,
+    apply_absolute_eval_gate_overrides,
+    apply_curated_pretrain_overrides,
+)
 from training.config_validation_runtime import (
+    validate_absolute_eval_gate_config,
     validate_bootstrap_warmup_config,
     validate_reward_shaping_config,
     validate_supported_heuristic_csv,
@@ -106,6 +113,12 @@ CONFIG: dict[str, int | float | bool | str] = {
     "restore_best_on_regression": True,
     "eval_regression_delta": 0.06,
     "eval_regression_patience": 2,
+    "baseline_checkpoint": "liga",
+    "baseline_composite": 0.81,
+    "baseline_h2h_min_score": 0.45,
+    "eval_absolute_patience": 2,
+    "eval_absolute_delta": 0.03,
+    "eval_absolute_action": "abort",
     "selfplay_workers": 8,
     "selfplay_progress_every_s": 120.0,
     "selfplay_episode_timeout_s": 1800.0,
@@ -115,14 +128,14 @@ CONFIG: dict[str, int | float | bool | str] = {
     "warmup_epochs": 8,
     "warmup_heuristic_level": "sentinel",
     "warmup_heuristic_levels": "hard,apex,sentinel",
+    "pretrain_dataset_path": "",
+    "pretrain_epochs": 0,
 }
-
 def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parents[2]
     src = root / "src"
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train Ataxx Zero.")
@@ -177,6 +190,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-restore-best-on-regression", action="store_true")
     parser.add_argument("--eval-regression-delta", type=float, default=None)
     parser.add_argument("--eval-regression-patience", type=int, default=None)
+    add_absolute_eval_gate_args(parser)
     parser.add_argument("--selfplay-workers", type=int, default=None)
     parser.add_argument("--selfplay-progress-every-s", type=float, default=None)
     parser.add_argument("--selfplay-episode-timeout-s", type=float, default=None)
@@ -186,6 +200,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-epochs", type=int, default=None)
     parser.add_argument("--warmup-heuristic-level", choices=list(HEURISTIC_LEVELS), default=None)
     parser.add_argument("--warmup-heuristic-levels", default=None)
+    add_curated_pretrain_args(parser)
     parser.add_argument("--eval-heuristic-level", choices=list(HEURISTIC_LEVELS), default=None)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--no-compile", action="store_true")
@@ -315,6 +330,7 @@ def apply_cli_overrides(args: argparse.Namespace) -> None:
         CONFIG["eval_regression_delta"] = max(0.0, args.eval_regression_delta)
     if args.eval_regression_patience is not None:
         CONFIG["eval_regression_patience"] = max(0, args.eval_regression_patience)
+    apply_absolute_eval_gate_overrides(args=args, config=CONFIG)
     if args.selfplay_workers is not None:
         CONFIG["selfplay_workers"] = max(1, args.selfplay_workers)
     if args.selfplay_progress_every_s is not None:
@@ -333,6 +349,7 @@ def apply_cli_overrides(args: argparse.Namespace) -> None:
         CONFIG["warmup_heuristic_level"] = args.warmup_heuristic_level
     if args.warmup_heuristic_levels is not None:
         CONFIG["warmup_heuristic_levels"] = args.warmup_heuristic_levels
+    apply_curated_pretrain_overrides(args=args, config=CONFIG)
     if args.eval_heuristic_level is not None:
         CONFIG["eval_heuristic_level"] = args.eval_heuristic_level
     if args.quiet:
@@ -359,32 +376,25 @@ def apply_cli_overrides(args: argparse.Namespace) -> None:
     if args.hf_upload_timeout_s is not None:
         CONFIG["hf_upload_future_timeout_s"] = max(1.0, args.hf_upload_timeout_s)
 
-
 def cfg_int(key: str) -> int:
     return int(CONFIG[key])
-
 
 def cfg_float(key: str) -> float:
     return float(CONFIG[key])
 
-
 def cfg_bool(key: str) -> bool:
     return bool(CONFIG[key])
-
 
 def cfg_str(key: str) -> str:
     return str(CONFIG[key])
 
-
 def is_quiet() -> bool:
     return cfg_bool("quiet_mode")
-
 
 def log(message: str, verbose_only: bool = False) -> None:
     if verbose_only and not cfg_bool("verbose_logs"):
         return
     print(message)
-
 
 def validate_config() -> None:
     int_positive_keys = (
@@ -422,6 +432,7 @@ def validate_config() -> None:
         raise ValueError("CONFIG['eval_regression_delta'] must be >= 0.")
     if cfg_int("eval_regression_patience") < 0:
         raise ValueError("CONFIG['eval_regression_patience'] must be >= 0.")
+    validate_absolute_eval_gate_config(cfg_float=cfg_float, cfg_int=cfg_int, cfg_str=cfg_str)
     if not is_supported_heuristic_level(cfg_str("warmup_heuristic_level")):
         raise ValueError(
             "CONFIG['warmup_heuristic_level'] must be a supported heuristic level.",

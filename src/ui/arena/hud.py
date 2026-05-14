@@ -29,6 +29,7 @@ _FILES = "abcdefg"
 _GOOD_COLOR = HUD_VISITS_BAR
 _BAD_COLOR = PIECE_P1
 _NEUTRAL_COLOR = HUD_HISTORY_TEXT
+_BRAIN_TABS = ("RESUMEN", "RED", "MCTS")
 
 
 def _cell_to_notation(row: int, col: int) -> str:
@@ -129,6 +130,144 @@ def _search_metrics(top_moves: list[tuple[int, int, float, float]]) -> tuple[str
     return confidence, gap_pts, uncertainty
 
 
+def _normalize_brain_tab(value: object) -> int:
+    if isinstance(value, int):
+        return value % len(_BRAIN_TABS)
+    return 0
+
+
+def _draw_activation_heatmap(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    heatmap: object,
+) -> None:
+    pygame.draw.rect(surf, HUD_VALUE_BAR_BG, rect)
+    pygame.draw.rect(surf, PANEL_BORDER, rect, width=1)
+    if not hasattr(heatmap, "shape"):
+        return
+    cell = max(2, min(rect.width, rect.height) // 7)
+    offset_x = rect.left + (rect.width - (cell * 7)) // 2
+    offset_y = rect.top + (rect.height - (cell * 7)) // 2
+    for row in range(7):
+        for col in range(7):
+            value = float(heatmap[row, col])  # type: ignore[index]
+            value = max(0.0, min(1.0, value))
+            color = (
+                int(20 + (HUD_VISITS_BAR[0] - 20) * value),
+                int(28 + (HUD_VISITS_BAR[1] - 28) * value),
+                int(46 + (HUD_VISITS_BAR[2] - 46) * value),
+            )
+            square = pygame.Rect(offset_x + col * cell, offset_y + row * cell, cell - 1, cell - 1)
+            pygame.draw.rect(surf, color, square)
+
+
+def _brain_top_line(brain: dict[str, Any]) -> str:
+    policy_top = brain.get("policy_top")
+    if not isinstance(policy_top, list) or len(policy_top) == 0:
+        return "Intuicion: --"
+    first = policy_top[0]
+    if not isinstance(first, tuple) or len(first) != 2:
+        return "Intuicion: --"
+    action_idx, prob = first
+    if not isinstance(action_idx, int):
+        return "Intuicion: --"
+    move = move_notation(ACTION_SPACE.decode(action_idx))
+    return f"Red: {move} {float(prob) * 100:4.1f}%"
+
+
+def _mcts_top_line(top_moves: list[tuple[int, int, float, float]]) -> str:
+    if not top_moves:
+        return "MCTS: --"
+    action_idx, visits, _value, _prior = top_moves[0]
+    total = sum(max(0, item[1]) for item in top_moves) or 1
+    return f"MCTS: {move_notation(ACTION_SPACE.decode(action_idx))} {visits / total * 100:4.1f}%"
+
+
+def _draw_compact_mcts_rows(
+    surf: pygame.Surface,
+    *,
+    top_moves: list[tuple[int, int, float, float]],
+    total_visits: int,
+    rect: pygame.Rect,
+    font_body: pygame.font.Font,
+    bar_color: tuple[int, int, int],
+) -> None:
+    row_h = max(16, font_body.get_linesize() - 2)
+    label_w = 62
+    pct_w = 46
+    bar_x = rect.left + label_w
+    bar_w = max(40, rect.width - label_w - pct_w)
+    for idx, (action_idx, visits, _value, _prior) in enumerate(top_moves[:3]):
+        y = rect.top + idx * row_h
+        pct = visits / max(1, total_visits)
+        move = move_notation(ACTION_SPACE.decode(action_idx))
+        surf.blit(font_body.render(move, True, TEXT_MAIN), (rect.left, y))
+        bar_rect = pygame.Rect(bar_x, y + 5, bar_w, 7)
+        pygame.draw.rect(surf, HUD_VISITS_BAR_DIM, bar_rect)
+        fill = pygame.Rect(bar_rect.left, bar_rect.top, int(bar_rect.width * pct), bar_rect.height)
+        pygame.draw.rect(surf, bar_color, fill)
+        pct_text = f"{pct * 100:>4.0f}%"
+        surf.blit(font_body.render(pct_text, True, TEXT_DIM), (bar_rect.right + 6, y))
+
+
+def _draw_policy_rows(
+    surf: pygame.Surface,
+    *,
+    policy_top: object,
+    rect: pygame.Rect,
+    font_body: pygame.font.Font,
+) -> None:
+    if not isinstance(policy_top, list) or len(policy_top) == 0:
+        surf.blit(font_body.render("Sin policy disponible", True, TEXT_DIM), rect.topleft)
+        return
+    row_h = max(16, font_body.get_linesize() - 2)
+    label_w = 62
+    pct_w = 52
+    bar_x = rect.left + label_w
+    bar_w = max(40, rect.width - label_w - pct_w)
+    for idx, item in enumerate(policy_top[:3]):
+        if not isinstance(item, tuple) or len(item) != 2:
+            continue
+        action_idx, prob = item
+        if not isinstance(action_idx, int):
+            continue
+        y = rect.top + idx * row_h
+        pct = max(0.0, min(1.0, float(prob)))
+        move = move_notation(ACTION_SPACE.decode(action_idx))
+        surf.blit(font_body.render(move, True, TEXT_MAIN), (rect.left, y))
+        bar_rect = pygame.Rect(bar_x, y + 5, bar_w, 7)
+        pygame.draw.rect(surf, HUD_VISITS_BAR_DIM, bar_rect)
+        fill = pygame.Rect(bar_rect.left, bar_rect.top, int(bar_rect.width * pct), bar_rect.height)
+        pygame.draw.rect(surf, HUD_HISTORY_TEXT, fill)
+        pygame.draw.rect(surf, HUD_VISITS_BAR, bar_rect, width=1)
+        pct_text = f"{pct * 100:>4.0f}%"
+        surf.blit(font_body.render(pct_text, True, TEXT_DIM), (bar_rect.right + 6, y))
+
+
+def _draw_brain_tabs(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    active_tab: int,
+    font_body: pygame.font.Font,
+) -> pygame.Rect:
+    line_h = font_body.get_linesize()
+    x = rect.left
+    for idx, label in enumerate(_BRAIN_TABS):
+        active = idx == active_tab
+        color = HUD_HISTORY_TEXT if active else TEXT_DIM
+        text = font_body.render(label, True, color)
+        surf.blit(text, (x, rect.top))
+        if active:
+            underline_y = rect.top + text.get_height() + 1
+            pygame.draw.line(surf, color, (x, underline_y), (x + text.get_width(), underline_y), width=2)
+        x += text.get_width() + 22
+    hint = "TAB"
+    hint_surf = font_body.render(hint, True, TEXT_DIM)
+    surf.blit(hint_surf, (rect.right - hint_surf.get_width(), rect.top))
+    return pygame.Rect(rect.left, rect.top + line_h + 8, rect.width, rect.height - line_h - 8)
+
+
 def _draw_panel_frame(
     surf: pygame.Surface,
     rect: pygame.Rect,
@@ -149,6 +288,132 @@ def _draw_panel_frame(
     )
     inner_top = rect.top + 10 + title_surface.get_height() + 12
     return pygame.Rect(rect.left + 14, inner_top, rect.width - 28, rect.bottom - inner_top - 14)
+
+
+def _draw_brain_summary_tab(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    top_moves: list[tuple[int, int, float, float]],
+    brain: dict[str, Any] | None,
+    perspective_label: str,
+    perspective_player: int,
+    win_pct_p1: float,
+    win_pct_perspective: float,
+    prob_color: tuple[int, int, int],
+    font_title: pygame.font.Font,
+    font_body: pygame.font.Font,
+) -> None:
+    line_h = font_body.get_linesize()
+    y = rect.top
+    surf.blit(font_body.render(f"{perspective_label} {_side_name(perspective_player)}", True, TEXT_DIM), (rect.left, y))
+    y += line_h
+    big = font_title.render(f"{win_pct_perspective:5.1f}%", True, prob_color)
+    surf.blit(big, (rect.left, y))
+    status = font_body.render(_position_label(win_pct_perspective), True, prob_color)
+    surf.blit(status, (rect.left + big.get_width() + 12, y + 8))
+    y += big.get_height() + 4
+    raw = f"ROJO {win_pct_p1:4.1f}%   AZUL {100.0 - win_pct_p1:4.1f}%"
+    surf.blit(font_body.render(raw, True, TEXT_DIM), (rect.left, y))
+
+    heat_size = 88
+    if brain is not None:
+        heat_rect = pygame.Rect(rect.right - heat_size, rect.top + 54, heat_size, heat_size)
+        _draw_activation_heatmap(surf, heat_rect, brain.get("activation_heatmap"))
+        red_line = _brain_top_line(brain)
+    else:
+        red_line = "Red: --"
+    mcts_line = _mcts_top_line(top_moves)
+    info_y = rect.bottom - (line_h * 3)
+    surf.blit(font_body.render(red_line, True, HUD_HISTORY_TEXT), (rect.left, info_y))
+    surf.blit(font_body.render(mcts_line, True, TEXT_MAIN), (rect.left, info_y + line_h))
+    if top_moves:
+        total_visits = sum(max(0, item[1]) for item in top_moves) or 1
+        confidence, _gap_pts, uncertainty = _search_metrics(top_moves)
+        summary = f"CONF {confidence}   INC {uncertainty}   {total_visits} sims"
+        surf.blit(font_body.render(summary, True, TEXT_DIM), (rect.left, info_y + line_h * 2))
+
+
+def _draw_brain_red_tab(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    brain: dict[str, Any] | None,
+    perspective_player: int,
+    font_body: pygame.font.Font,
+) -> None:
+    line_h = font_body.get_linesize()
+    if brain is None:
+        surf.blit(font_body.render("Esperando activacion de la red...", True, TEXT_DIM), rect.topleft)
+        return
+    arch = brain.get("architecture")
+    if isinstance(arch, dict):
+        arch_text = (
+            f"{arch.get('tokens', '?')} tok | "
+            f"{arch.get('layers', '?')} capas | "
+            f"{arch.get('heads', '?')} heads | "
+            f"d{arch.get('d_model', '?')}"
+        )
+    else:
+        arch_text = "Transformer policy/value"
+    surf.blit(font_body.render(arch_text, True, TEXT_DIM), rect.topleft)
+
+    heat_size = min(142, rect.height - line_h - 10)
+    heat_rect = pygame.Rect(rect.right - heat_size, rect.top + line_h + 6, heat_size, heat_size)
+    _draw_activation_heatmap(surf, heat_rect, brain.get("activation_heatmap"))
+
+    brain_value = float(brain.get("value", 0.0))
+    brain_pct_p1 = _pct_from_value(brain_value)
+    side_pct = brain_pct_p1 if perspective_player == 1 else 100.0 - brain_pct_p1
+    y = rect.top + line_h + 8
+    surf.blit(font_body.render(f"Eval {_side_name(perspective_player)} {side_pct:4.1f}%", True, TEXT_MAIN), (rect.left, y))
+    y += line_h + 8
+    surf.blit(font_body.render("Policy directa", True, TEXT_DIM), (rect.left, y))
+    rows_rect = pygame.Rect(rect.left, y + line_h + 4, heat_rect.left - rect.left - 14, line_h * 3)
+    _draw_policy_rows(
+        surf,
+        policy_top=brain.get("policy_top"),
+        rect=rows_rect,
+        font_body=font_body,
+    )
+
+
+def _draw_brain_mcts_tab(
+    surf: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    top_moves: list[tuple[int, int, float, float]],
+    bar_color: tuple[int, int, int],
+    font_body: pygame.font.Font,
+) -> None:
+    line_h = font_body.get_linesize()
+    if not top_moves:
+        surf.blit(font_body.render("MCTS: esperando...", True, TEXT_DIM), rect.topleft)
+        return
+    total_visits = sum(visits for _, visits, _, _ in top_moves) or 1
+    if _is_forced_pass(top_moves):
+        surf.blit(font_body.render("Sin jugadas legales", True, HUD_HISTORY_TEXT), rect.topleft)
+        surf.blit(font_body.render(f"Pass forzado | {total_visits} sims", True, TEXT_DIM), (rect.left, rect.top + line_h))
+        return
+    surf.blit(font_body.render("Top 3 por visitas", True, TEXT_DIM), rect.topleft)
+    rows_rect = pygame.Rect(rect.left, rect.top + line_h + 8, rect.width - 8, line_h * 3)
+    _draw_compact_mcts_rows(
+        surf,
+        top_moves=top_moves,
+        total_visits=total_visits,
+        rect=rows_rect,
+        font_body=font_body,
+        bar_color=bar_color,
+    )
+    confidence, gap_pts, uncertainty = _search_metrics(top_moves)
+    y = rows_rect.bottom + 12
+    surf.blit(font_body.render(f"Confianza     {confidence}", True, HUD_HISTORY_TEXT), (rect.left, y))
+    y += line_h
+    surf.blit(font_body.render(f"Incertidumbre {uncertainty}", True, HUD_HISTORY_TEXT), (rect.left, y))
+    y += line_h
+    surf.blit(font_body.render(f"Gap           +{gap_pts} pts", True, TEXT_DIM), (rect.left, y))
+    y += line_h
+    surf.blit(font_body.render(f"Simulaciones  {total_visits}", True, TEXT_DIM), (rect.left, y))
 
 
 def draw_top_panel(
@@ -181,28 +446,25 @@ def draw_top_panel(
     color_turn = PIECE_P1 if turn_player == 1 else PIECE_P2
     name_turn = "ROJO (P1)" if turn_player == 1 else "AZUL (P2)"
     rows = [
-        (f"Modo    : {mode_es}", TEXT_MAIN),
-        (f"Lados   : R {p1_name}  |  A {p2_name}", TEXT_DIM),
-        (f"Turno   : {turn_index}", TEXT_MAIN),
-        (f"Mueve   : {name_turn}", color_turn),
+        (f"Modo  : {mode_es}", TEXT_MAIN),
+        (f"R {p1_name}  |  A {p2_name}", TEXT_DIM),
+        (f"Turno : {turn_index}", TEXT_MAIN),
+        (f"Mueve : {name_turn}", color_turn),
     ]
     for text, color in rows:
         surf.blit(font_body.render(text, True, color), (inner.left, y))
         y += line_h
     y += 4
-    score_text = f"Piezas  : P1 {p1_count:>2}   -   P2 {p2_count:>2}"
+    score_text = f"Piezas: R {p1_count:>2}  |  A {p2_count:>2}"
     surf.blit(font_body.render(score_text, True, TEXT_DIM), (inner.left, y))
     y += line_h
-    if stats_record is not None:
-        rec = stats_record
-        wld = f"Record  : G {rec.get('w', 0)}  P {rec.get('l', 0)}  E {rec.get('d', 0)}"
-        surf.blit(font_body.render(wld, True, HUD_HISTORY_TEXT), (inner.left, y))
     speed_str = f"{speed_mult:g}x"
     state_str = f"PAUSA  vel {speed_str}" if paused else f"vel {speed_str}"
     surf.blit(
         font_body.render(state_str, True, PIECE_P1 if paused else TEXT_DIM),
         (rect.right - 14 - font_body.size(state_str)[0], rect.top + 12),
     )
+    _ = stats_record
 
 
 def draw_top_moves_panel(
@@ -212,15 +474,23 @@ def draw_top_moves_panel(
     top_moves: list[tuple[int, int, float, float]],
     root_value: float,
     thinker_player: int | None,
+    brain: dict[str, Any] | None,
+    brain_tab: int,
     p1_agent: str,
     p2_agent: str,
     turn_player: int,
     font_title: pygame.font.Font,
     font_body: pygame.font.Font,
 ) -> None:
-    inner = _draw_panel_frame(surf, rect, "ANALISIS DE LA IA", font_title)
-    line_h = font_body.get_linesize()
+    inner = _draw_panel_frame(surf, rect, "CEREBRO IA", font_title)
     bar_color = PIECE_P1 if thinker_player == 1 else PIECE_P2
+    active_tab = _normalize_brain_tab(brain_tab)
+    content = _draw_brain_tabs(
+        surf,
+        inner,
+        active_tab=active_tab,
+        font_body=font_body,
+    )
     perspective_label, perspective_player = _select_perspective(
         p1_agent=p1_agent,
         p2_agent=p2_agent,
@@ -232,66 +502,37 @@ def draw_top_moves_panel(
     win_pct_perspective = _pct_from_value(_value_for_side(clamped_p1, perspective_player))
     prob_color = _evaluation_color(win_pct_perspective)
 
-    y = inner.top
-    side_text = f"{perspective_label} juega {_side_name(perspective_player)}"
-    surf.blit(font_body.render(side_text, True, TEXT_DIM), (inner.left, y))
-    y += line_h
-    big = font_title.render(f"{win_pct_perspective:5.1f}%", True, prob_color)
-    surf.blit(big, (inner.left, y))
-    status = font_body.render(_position_label(win_pct_perspective), True, prob_color)
-    surf.blit(status, (inner.left + big.get_width() + 12, y + 8))
-    y += big.get_height() + 4
-
-    raw = f"Modelo: ROJO {win_pct_p1:4.1f}%  |  AZUL {100.0 - win_pct_p1:4.1f}%"
-    surf.blit(font_body.render(raw, True, TEXT_DIM), (inner.left, y))
-    y += line_h + 10
-
-    if not top_moves:
-        waiting = font_body.render("Esperando analisis...", True, TEXT_DIM)
-        surf.blit(waiting, (inner.left, y))
+    if active_tab == 1:
+        _draw_brain_red_tab(
+            surf,
+            content,
+            brain=brain,
+            perspective_player=perspective_player,
+            font_body=font_body,
+        )
         return
-
-    total_visits = sum(visits for _, visits, _, _ in top_moves) or 1
-    if _is_forced_pass(top_moves):
-        forced = font_body.render("Sin jugadas legales", True, HUD_HISTORY_TEXT)
-        surf.blit(forced, (inner.left, y))
-        y += line_h
-        note = "La IA debe pasar; no hay decision que comparar."
-        surf.blit(font_body.render(note, True, TEXT_DIM), (inner.left, y))
-        y += line_h + 6
-        sims = f"Busqueda: {total_visits} sims en estado forzado"
-        surf.blit(font_body.render(sims, True, TEXT_DIM), (inner.left, y))
+    if active_tab == 2:
+        _draw_brain_mcts_tab(
+            surf,
+            content,
+            top_moves=top_moves,
+            bar_color=bar_color,
+            font_body=font_body,
+        )
         return
-
-    surf.blit(font_body.render("Candidatas MCTS", True, TEXT_DIM), (inner.left, y))
-    y += line_h + 4
-
-    label_w = 88
-    right_w = 124
-    bar_left = inner.left + label_w
-    bar_right = inner.right - right_w
-    bar_w = bar_right - bar_left
-    for action_idx, visits, _value, _prior in top_moves[:3]:
-        move = ACTION_SPACE.decode(action_idx)
-        notation = move_notation(move)
-        pct = visits / total_visits
-
-        surf.blit(font_body.render(notation, True, TEXT_MAIN), (inner.left, y))
-        bar_rect = pygame.Rect(bar_left, y + 5, bar_w, max(5, line_h - 10))
-        pygame.draw.rect(surf, HUD_VISITS_BAR_DIM, bar_rect)
-        fill = pygame.Rect(bar_rect.left, bar_rect.top, int(bar_w * pct), bar_rect.height)
-        pygame.draw.rect(surf, bar_color, fill)
-        pygame.draw.rect(surf, HUD_VISITS_BAR, bar_rect, width=1)
-
-        right_text = f"{int(pct * 100):>3}%  {visits} sim"
-        right_surf = font_body.render(right_text, True, TEXT_DIM)
-        surf.blit(right_surf, (bar_right + 6, y))
-        y += line_h + 4
-
-    y += 4
-    confidence, _gap_pts, uncertainty = _search_metrics(top_moves)
-    summary = f"Decision: {confidence}  |  Incertidumbre: {uncertainty}  |  Sims: {total_visits}"
-    surf.blit(font_body.render(summary, True, HUD_HISTORY_TEXT), (inner.left, y))
+    _draw_brain_summary_tab(
+        surf,
+        content,
+        top_moves=top_moves,
+        brain=brain,
+        perspective_label=perspective_label,
+        perspective_player=perspective_player,
+        win_pct_p1=win_pct_p1,
+        win_pct_perspective=win_pct_perspective,
+        prob_color=prob_color,
+        font_title=font_title,
+        font_body=font_body,
+    )
 
 
 def draw_history_panel(
@@ -414,12 +655,15 @@ def draw_hud(
     root_value = float(arena_state.get("last_root_value", 0.0))
     thinker = arena_state.get("last_thinker")
     thinker_player = int(thinker) if isinstance(thinker, int) else None
+    brain_tab = _normalize_brain_tab(arena_state.get("brain_tab", 0))
     draw_top_moves_panel(
         surf,
         hud_mid_rect(),
         top_moves=top_moves,
         root_value=root_value,
         thinker_player=thinker_player,
+        brain=arena_state.get("last_brain") if isinstance(arena_state.get("last_brain"), dict) else None,
+        brain_tab=brain_tab,
         p1_agent=p1_agent,
         p2_agent=p2_agent,
         turn_player=turn_player,

@@ -14,6 +14,10 @@ src = root / "src"
 if str(src) not in sys.path:
     sys.path.insert(0, str(src))
 from inference.checkpoint_duel_runtime import run_match_results_to_summary  # noqa: E402
+from training.absolute_gate_runtime import (  # noqa: E402
+    absolute_gate_message,
+    evaluate_absolute_gate,
+)
 from training.callbacks import OptimizerStateTransfer  # noqa: E402
 from training.checkpointing import (  # noqa: E402
     cleanup_local_checkpoints,
@@ -51,6 +55,7 @@ from training.loop_runtime import (  # noqa: E402
     prepare_train_val_examples,
     resolve_eval_levels,
     restore_system_from_checkpoint,
+    run_curated_pretrain_if_needed,
     run_warmup_if_needed,
 )
 from training.monitor import TrainingMonitor  # noqa: E402
@@ -144,6 +149,8 @@ def main() -> None:
     best_eval_score = -1.0
     best_path = checkpoint_dir / "best_eval.ckpt"
     eval_regression_streak = 0
+    absolute_fail_count = 0
+    h2h_fail_count = 0
     optimizer_transfer = OptimizerStateTransfer()
     monitor = TrainingMonitor(
         total_iterations=iterations,
@@ -154,6 +161,22 @@ def main() -> None:
         pulse_every=cfg_int("epoch_pulse_every"),
     )
 
+    trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision = (
+        run_curated_pretrain_if_needed(
+            start_iteration=start_iteration,
+            system=system,
+            trainer_accelerator=trainer_accelerator,
+            trainer_devices=trainer_devices,
+            trainer_strategy=trainer_strategy,
+            trainer_precision=trainer_precision,
+            checkpoint_callback=checkpoint_callback,
+            lr_monitor=lr_monitor,
+            logger=logger,
+            device=device,
+            optimizer_transfer=optimizer_transfer,
+            epoch_pulse=epoch_pulse,
+        )
+    )
     trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision = run_warmup_if_needed(
         start_iteration=start_iteration,
         system=system,
@@ -226,6 +249,7 @@ def main() -> None:
 
             eval_stats: dict[str, float | int | str] | None = None
             eval_level_summaries: dict[str, dict[str, float | int | str]] = {}
+            absolute_gate_abort_message: str | None = None
             if cfg_bool("eval_enabled") and iteration % cfg_int("eval_every") == 0:
                 try:
                     eval_levels = resolve_eval_levels()
@@ -297,8 +321,48 @@ def main() -> None:
                                     iteration=iteration,
                                     message=f"failed to restore best checkpoint: {restore_exc}",
                                 )
+                    absolute_gate_ckpt = checkpoint_dir / "_absolute_gate_candidate.ckpt"
+                    trainer.save_checkpoint(str(absolute_gate_ckpt))
+                    try:
+                        absolute_fail_count, h2h_fail_count, gate_stats, gate_failed = (
+                            evaluate_absolute_gate(
+                                candidate_checkpoint=absolute_gate_ckpt,
+                                current_composite=float(eval_stats["score"]),
+                                absolute_fail_count=absolute_fail_count,
+                                h2h_fail_count=h2h_fail_count,
+                                device=device,
+                                c_puct=cfg_float("c_puct"),
+                                seed=cfg_int("seed") + 300_000 + iteration,
+                            )
+                        )
+                    except Exception as gate_exc:
+                        absolute_gate_abort_message = f"absolute eval gate unavailable: {gate_exc}"
+                        raise
+                    if gate_stats:
+                        eval_stats.update(gate_stats)
+                        monitor.log_warning(
+                            iteration=iteration,
+                            message=absolute_gate_message(gate_stats),
+                        )
+                    if gate_failed:
+                        action = cfg_str("eval_absolute_action")
+                        if action == "abort":
+                            absolute_gate_abort_message = absolute_gate_message(gate_stats)
+                        elif action == "restore_best" and best_path.exists():
+                            restore_system_from_checkpoint(system, str(best_path))
+                            monitor.log_warning(
+                                iteration=iteration,
+                                message="absolute gate failed; restored best checkpoint.",
+                            )
+                        else:
+                            monitor.log_warning(
+                                iteration=iteration,
+                                message="absolute gate failed; continuing by configuration.",
+                            )
                 except Exception as exc:
                     monitor.log_warning(iteration=iteration, message=f"eval failed, continuing training: {exc}")
+            if absolute_gate_abort_message is not None:
+                raise RuntimeError(f"absolute eval gate failed: {absolute_gate_abort_message}")
 
             if not should_save_iteration_checkpoint(
                 iteration=iteration,

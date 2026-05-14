@@ -16,9 +16,9 @@ BOARD_PX = BS * CELL  # 672
 # HUD panel takes the rest of the width. Three vertical sections.
 HUD_X = BOARD_AREA  # 720
 HUD_W = WIN_W - HUD_X  # 560
-HUD_TOP_H = 200
-HUD_MID_H = 300
-HUD_BOTTOM_H = WIN_H - HUD_TOP_H - HUD_MID_H  # 220
+HUD_TOP_H = 180
+HUD_MID_H = 340
+HUD_BOTTOM_H = WIN_H - HUD_TOP_H - HUD_MID_H  # 200
 
 # Backwards compat: SIDE was the old sidebar width. Some callers may import.
 SIDE = HUD_W

@@ -184,6 +184,20 @@ class TestBoardRules(unittest.TestCase):
         self.assertTrue(board.is_game_over())
         self.assertEqual(board.get_result(), DRAW)
 
+    def test_hundred_half_moves_does_not_end_game_by_itself(self) -> None:
+        board = AtaxxBoard()
+        board.half_moves = 100
+
+        self.assertFalse(board.is_game_over())
+        self.assertFalse(board.is_forced_draw())
+
+    def test_half_move_observation_uses_extended_late_game_scale(self) -> None:
+        board = AtaxxBoard()
+        board.half_moves = 128
+        obs = board.get_observation()
+
+        self.assertTrue(np.allclose(obs[3], 0.5))
+
 
 if __name__ == "__main__":
     unittest.main()
