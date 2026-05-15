@@ -22,13 +22,7 @@ from training.config_validation_runtime import (
 )
 from training.league_config_runtime import DEFAULT_LEAGUE_CONFIG, validate_league_config
 
-TrainerPrecision = Literal[
-    "16", "16-mixed", "16-true",
-    "32", "32-true",
-    "64", "64-true",
-    "bf16", "bf16-mixed", "bf16-true",
-    "transformer-engine", "transformer-engine-float16",
-]
+TrainerPrecision = Literal["16", "16-mixed", "16-true", "32", "32-true", "64", "64-true", "bf16", "bf16-mixed", "bf16-true", "transformer-engine", "transformer-engine-float16"]
 CONFIG: dict[str, int | float | bool | str] = {
     "iterations": 20,
     "episodes_per_iter": 60,
@@ -76,6 +70,10 @@ CONFIG: dict[str, int | float | bool | str] = {
     "hf_reset_iteration": False,
     "hf_token_env": "HF_TOKEN",
     "hf_local_dir": "hf_checkpoints",
+    "wandb_enabled": False,
+    "wandb_project": "ataxx-zero",
+    "wandb_entity": "",
+    "wandb_run_name": "",
     "max_pending_hf_uploads": 2,
     "hf_upload_future_timeout_s": 120.0,
     "show_progress_bar": False,

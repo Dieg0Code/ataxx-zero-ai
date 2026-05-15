@@ -58,6 +58,7 @@ dev = [
 train = [
     "huggingface-hub>=1.4.1",
     "tensorboard>=2.20.0",
+    "wandb>=0.23.0",
 ]
 ui = [
     "pygame>=2.6.1",
