@@ -12,6 +12,19 @@ if str(SRC) not in sys.path:
 from data.curation import curate_npz_paths, save_curated_dataset  # noqa: E402
 
 
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        parsed_float = float(value)
+        if not parsed_float.is_integer():
+            raise argparse.ArgumentTypeError("must be a positive integer") from None
+        parsed = int(parsed_float)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def _glob_paths(pattern: str) -> list[Path]:
     pattern_path = Path(pattern)
     if pattern_path.is_absolute():
@@ -49,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Curate Ataxx training NPZ datasets.")
     parser.add_argument("--source", action="append", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--human-oversample", type=int, default=4)
+    parser.add_argument("--human-oversample", type=_positive_int, default=4)
     return parser.parse_args()
 
 
