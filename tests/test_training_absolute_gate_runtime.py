@@ -16,6 +16,7 @@ class TestTrainingAbsoluteGateRuntime(unittest.TestCase):
         CONFIG["baseline_h2h_min_score"] = 0.45
         CONFIG["eval_absolute_patience"] = 2
         CONFIG["eval_absolute_delta"] = 0.03
+        CONFIG["eval_absolute_abort_mode"] = "any"
         CONFIG["eval_games"] = 8
         CONFIG["eval_sims"] = 16
         CONFIG["hf_enabled"] = False
@@ -54,6 +55,36 @@ class TestTrainingAbsoluteGateRuntime(unittest.TestCase):
         self.assertTrue(failed)
         self.assertEqual(stats["baseline_checkpoint"], "liga")
         self.assertEqual(stats["baseline_h2h_score"], 0.25)
+
+    def test_h2h_abort_mode_does_not_abort_on_composite_failure_only(self) -> None:
+        CONFIG["eval_absolute_abort_mode"] = "h2h"
+        with patch(
+            "training.absolute_gate_runtime.resolve_checkpoint",
+            return_value=Path("checkpoints/policy_spatial_v8_iter_180.pt"),
+        ), patch(
+            "training.absolute_gate_runtime.run_match_results_to_summary",
+            return_value={
+                "games": 8,
+                "checkpoint_a_wins": 4,
+                "checkpoint_b_wins": 4,
+                "draws": 0,
+                "checkpoint_a_score": 0.5,
+            },
+        ):
+            abs_count, h2h_count, stats, failed = evaluate_absolute_gate(
+                candidate_checkpoint=Path("candidate.ckpt"),
+                current_composite=0.52,
+                absolute_fail_count=1,
+                h2h_fail_count=0,
+                device="cpu",
+                c_puct=1.5,
+                seed=7,
+            )
+
+        self.assertEqual(abs_count, 2)
+        self.assertEqual(h2h_count, 0)
+        self.assertFalse(failed)
+        self.assertEqual(stats["absolute_gate_abort_mode"], "h2h")
 
     def test_absolute_gate_uses_hf_baseline_when_local_registry_is_missing(self) -> None:
         CONFIG["hf_enabled"] = True

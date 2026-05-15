@@ -69,6 +69,8 @@ def validate_absolute_eval_gate_config(
         raise ValueError("CONFIG['eval_absolute_delta'] must be >= 0.")
     if cfg_str("eval_absolute_action") not in {"abort", "restore_best", "warn"}:
         raise ValueError("CONFIG['eval_absolute_action'] must be abort, restore_best, or warn.")
+    if cfg_str("eval_absolute_abort_mode") not in {"any", "both", "h2h"}:
+        raise ValueError("CONFIG['eval_absolute_abort_mode'] must be any, both, or h2h.")
 
 
 __all__ = [

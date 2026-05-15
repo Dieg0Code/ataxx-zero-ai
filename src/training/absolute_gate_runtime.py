@@ -52,6 +52,15 @@ def _resolve_baseline_checkpoint(name: str) -> Path:
         return _download_hf_baseline_checkpoint(cfg_str("baseline_hf_run_id"))
 
 
+def _absolute_gate_failed(*, absolute_failed: bool, h2h_failed: bool) -> bool:
+    mode = cfg_str("eval_absolute_abort_mode")
+    if mode == "h2h":
+        return h2h_failed
+    if mode == "both":
+        return bool(absolute_failed and h2h_failed)
+    return bool(absolute_failed or h2h_failed)
+
+
 def evaluate_absolute_gate(
     *,
     candidate_checkpoint: Path,
@@ -103,8 +112,12 @@ def evaluate_absolute_gate(
         "baseline_h2h_draws": int(h2h_summary["draws"]),
         "absolute_fail_count": absolute_fail_count,
         "h2h_fail_count": h2h_fail_count,
+        "absolute_gate_abort_mode": cfg_str("eval_absolute_abort_mode"),
     }
-    return absolute_fail_count, h2h_fail_count, stats, bool(absolute_failed or h2h_failed)
+    return absolute_fail_count, h2h_fail_count, stats, _absolute_gate_failed(
+        absolute_failed=absolute_failed,
+        h2h_failed=h2h_failed,
+    )
 
 
 def absolute_gate_message(stats: dict[str, Any]) -> str:

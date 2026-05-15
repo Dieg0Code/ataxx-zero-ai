@@ -118,6 +118,7 @@ CONFIG: dict[str, int | float | bool | str] = {
     "eval_absolute_patience": 2,
     "eval_absolute_delta": 0.03,
     "eval_absolute_action": "abort",
+    "eval_absolute_abort_mode": "any",
     "eval_absolute_min_iteration": 0,
     "selfplay_workers": 8,
     "selfplay_progress_every_s": 120.0,
