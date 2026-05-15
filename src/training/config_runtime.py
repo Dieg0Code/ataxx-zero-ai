@@ -114,6 +114,7 @@ CONFIG: dict[str, int | float | bool | str] = {
     "eval_regression_delta": 0.06,
     "eval_regression_patience": 2,
     "baseline_checkpoint": "liga",
+    "baseline_hf_run_id": "",
     "baseline_composite": 0.81,
     "baseline_h2h_min_score": 0.45,
     "eval_absolute_patience": 2,

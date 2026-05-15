@@ -26,6 +26,7 @@
   "eval_sims": 96,
   "eval_heuristic_levels": "hard,apex,sentinel",
   "baseline_checkpoint": "liga",
+  "baseline_hf_run_id": "policy_spatial_v8",
   "baseline_composite": 0.81,
   "baseline_h2h_min_score": 0.45,
   "eval_absolute_patience": 2,

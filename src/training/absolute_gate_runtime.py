@@ -1,12 +1,55 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from inference.checkpoint_duel_runtime import run_match_results_to_summary
 from model.registry import resolve as resolve_checkpoint
-from training.config_runtime import cfg_float, cfg_int, cfg_str
+from training.config_runtime import cfg_bool, cfg_float, cfg_int, cfg_str
 from training.eval_gating import compute_absolute_score_gate, compute_h2h_gate
+
+
+def _download_hf_baseline_checkpoint(run_id: str) -> Path:
+    run_id = run_id.strip()
+    if run_id == "":
+        raise ValueError("baseline_hf_run_id is empty")
+    repo_id = cfg_str("hf_repo_id").strip()
+    if repo_id == "":
+        raise ValueError("hf_repo_id is empty")
+
+    hub_mod = __import__("huggingface_hub", fromlist=["HfApi", "hf_hub_download"])
+    api = hub_mod.HfApi(token=os.environ.get("HF_TOKEN") or None)
+    files = api.list_repo_files(repo_id=repo_id, repo_type="model")
+    prefix = f"runs/{run_id}/"
+    model_files = [
+        name
+        for name in files
+        if name.startswith(prefix)
+        and Path(name).name.startswith("model_iter_")
+        and (name.endswith(".pt") or name.endswith(".ckpt"))
+    ]
+    if not model_files:
+        raise FileNotFoundError(f"No HF baseline model files found for run '{run_id}'")
+    latest = max(model_files, key=lambda name: int(Path(name).stem.split("_")[2]))
+    local_dir = Path(cfg_str("hf_local_dir") or ".hf_baselines") / "baselines" / run_id
+    local_path = hub_mod.hf_hub_download(
+        repo_id=repo_id,
+        filename=latest,
+        repo_type="model",
+        token=os.environ.get("HF_TOKEN") or None,
+        local_dir=str(local_dir),
+    )
+    return Path(local_path)
+
+
+def _resolve_baseline_checkpoint(name: str) -> Path:
+    try:
+        return resolve_checkpoint(name)
+    except (FileNotFoundError, ValueError, KeyError):
+        if not cfg_bool("hf_enabled"):
+            raise
+        return _download_hf_baseline_checkpoint(cfg_str("baseline_hf_run_id"))
 
 
 def evaluate_absolute_gate(
@@ -32,7 +75,7 @@ def evaluate_absolute_gate(
         patience=patience,
     )
 
-    baseline_path = resolve_checkpoint(baseline_name)
+    baseline_path = _resolve_baseline_checkpoint(baseline_name)
     h2h_summary = run_match_results_to_summary(
         checkpoint_a=candidate_checkpoint,
         checkpoint_b=baseline_path,

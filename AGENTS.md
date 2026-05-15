@@ -33,6 +33,8 @@ Name modules and functions in `snake_case`, classes in `PascalCase`, constants i
 
 Reuse existing systems before adding parallel implementations. In particular, UI work in `src/ui/arena/` should reuse the arena renderer, HUD, layout, and theme when it is showing the same game board or pieces; only add specialized overlays or state where the behavior genuinely differs.
 
+Do not assume local developer artifacts exist in Kaggle, CI, or other clean runtimes. Any code that resolves checkpoints, model aliases, replay data, or registries must use the repository's existing resolver/checkpointer paths, and tests must cover the clean-runtime case where local `checkpoints/registry.json` is absent. Avoid one-off path lookups when an existing registry, HuggingFace, or runtime helper already owns that concern.
+
 ## Testing Guidelines
 
 Use pytest/unittest-compatible tests under `tests/`. Add focused tests near the affected subsystem: rules in `test_board_rules.py`, MCTS in `test_mcts_numerics.py`, training behavior in `test_training_*.py`, inference in `test_inference_*.py`, and arena runtime in `test_ui_arena_model_runtime.py`. For numerical or training changes, use deterministic seeds or small fixtures.
