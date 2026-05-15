@@ -321,44 +321,54 @@ def main() -> None:
                                     iteration=iteration,
                                     message=f"failed to restore best checkpoint: {restore_exc}",
                                 )
-                    absolute_gate_ckpt = checkpoint_dir / "_absolute_gate_candidate.ckpt"
-                    trainer.save_checkpoint(str(absolute_gate_ckpt))
-                    try:
-                        absolute_fail_count, h2h_fail_count, gate_stats, gate_failed = (
-                            evaluate_absolute_gate(
-                                candidate_checkpoint=absolute_gate_ckpt,
-                                current_composite=float(eval_stats["score"]),
-                                absolute_fail_count=absolute_fail_count,
-                                h2h_fail_count=h2h_fail_count,
-                                device=device,
-                                c_puct=cfg_float("c_puct"),
-                                seed=cfg_int("seed") + 300_000 + iteration,
-                            )
-                        )
-                    except Exception as gate_exc:
-                        absolute_gate_abort_message = f"absolute eval gate unavailable: {gate_exc}"
-                        raise
-                    if gate_stats:
-                        eval_stats.update(gate_stats)
+                    gate_min_iteration = cfg_int("eval_absolute_min_iteration")
+                    if iteration < gate_min_iteration:
                         monitor.log_warning(
                             iteration=iteration,
-                            message=absolute_gate_message(gate_stats),
+                            message=(
+                                "absolute gate warmup: "
+                                f"iteration {iteration}/{gate_min_iteration}; baseline abort disabled"
+                            ),
                         )
-                    if gate_failed:
-                        action = cfg_str("eval_absolute_action")
-                        if action == "abort":
-                            absolute_gate_abort_message = absolute_gate_message(gate_stats)
-                        elif action == "restore_best" and best_path.exists():
-                            restore_system_from_checkpoint(system, str(best_path))
+                    else:
+                        absolute_gate_ckpt = checkpoint_dir / "_absolute_gate_candidate.ckpt"
+                        trainer.save_checkpoint(str(absolute_gate_ckpt))
+                        try:
+                            absolute_fail_count, h2h_fail_count, gate_stats, gate_failed = (
+                                evaluate_absolute_gate(
+                                    candidate_checkpoint=absolute_gate_ckpt,
+                                    current_composite=float(eval_stats["score"]),
+                                    absolute_fail_count=absolute_fail_count,
+                                    h2h_fail_count=h2h_fail_count,
+                                    device=device,
+                                    c_puct=cfg_float("c_puct"),
+                                    seed=cfg_int("seed") + 300_000 + iteration,
+                                )
+                            )
+                        except Exception as gate_exc:
+                            absolute_gate_abort_message = f"absolute eval gate unavailable: {gate_exc}"
+                            raise
+                        if gate_stats:
+                            eval_stats.update(gate_stats)
                             monitor.log_warning(
                                 iteration=iteration,
-                                message="absolute gate failed; restored best checkpoint.",
+                                message=absolute_gate_message(gate_stats),
                             )
-                        else:
-                            monitor.log_warning(
-                                iteration=iteration,
-                                message="absolute gate failed; continuing by configuration.",
-                            )
+                        if gate_failed:
+                            action = cfg_str("eval_absolute_action")
+                            if action == "abort":
+                                absolute_gate_abort_message = absolute_gate_message(gate_stats)
+                            elif action == "restore_best" and best_path.exists():
+                                restore_system_from_checkpoint(system, str(best_path))
+                                monitor.log_warning(
+                                    iteration=iteration,
+                                    message="absolute gate failed; restored best checkpoint.",
+                                )
+                            else:
+                                monitor.log_warning(
+                                    iteration=iteration,
+                                    message="absolute gate failed; continuing by configuration.",
+                                )
                 except Exception as exc:
                     monitor.log_warning(iteration=iteration, message=f"eval failed, continuing training: {exc}")
             if absolute_gate_abort_message is not None:
@@ -485,7 +495,6 @@ def main() -> None:
                     raise
                 log(f"HF upload wait failed: {exc}")
             hf_upload_executor.shutdown(wait=False, cancel_futures=True)
-
 
 if __name__ == "__main__":
     main()

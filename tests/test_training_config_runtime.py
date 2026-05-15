@@ -142,6 +142,8 @@ class TestTrainingConfigRuntime(unittest.TestCase):
                 "0.03",
                 "--eval-absolute-action",
                 "abort",
+                "--eval-absolute-min-iteration",
+                "36",
             ],
         ):
             args = parse_args()
@@ -154,6 +156,7 @@ class TestTrainingConfigRuntime(unittest.TestCase):
         self.assertEqual(int(CONFIG["eval_absolute_patience"]), 2)
         self.assertAlmostEqual(float(CONFIG["eval_absolute_delta"]), 0.03)
         self.assertEqual(str(CONFIG["eval_absolute_action"]), "abort")
+        self.assertEqual(int(CONFIG["eval_absolute_min_iteration"]), 36)
 
 
 if __name__ == "__main__":

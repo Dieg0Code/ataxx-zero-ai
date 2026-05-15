@@ -120,6 +120,7 @@ CONFIG: dict[str, int | float | bool | str] = {
     "eval_absolute_patience": 2,
     "eval_absolute_delta": 0.03,
     "eval_absolute_action": "abort",
+    "eval_absolute_min_iteration": 0,
     "selfplay_workers": 8,
     "selfplay_progress_every_s": 120.0,
     "selfplay_episode_timeout_s": 1800.0,
@@ -494,7 +495,6 @@ def validate_config() -> None:
             f"Heuristic level probs sum to {heu_sum:.6f}; they will be normalized automatically.",
             verbose_only=True,
         )
-
 def resolve_trainer_precision(accelerator: str) -> TrainerPrecision:
     configured = cast(TrainerPrecision, cfg_str("trainer_precision"))
     return configured if accelerator == "gpu" else cast(TrainerPrecision, "32-true")

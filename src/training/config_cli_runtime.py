@@ -15,6 +15,7 @@ def add_absolute_eval_gate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--eval-absolute-patience", type=int, default=None)
     parser.add_argument("--eval-absolute-delta", type=float, default=None)
     parser.add_argument("--eval-absolute-action", choices=["abort", "restore_best", "warn"], default=None)
+    parser.add_argument("--eval-absolute-min-iteration", type=int, default=None)
 
 
 def apply_curated_pretrain_overrides(
@@ -46,6 +47,9 @@ def apply_absolute_eval_gate_overrides(
         if args.eval_absolute_delta is not None
         else None,
         "eval_absolute_action": args.eval_absolute_action,
+        "eval_absolute_min_iteration": max(0, args.eval_absolute_min_iteration)
+        if args.eval_absolute_min_iteration is not None
+        else None,
     }
     for key, value in updates.items():
         if value is not None:

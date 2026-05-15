@@ -63,6 +63,8 @@ def validate_absolute_eval_gate_config(
             raise ValueError(f"CONFIG['{key}'] must be in [0, 1].")
     if cfg_int("eval_absolute_patience") < 0:
         raise ValueError("CONFIG['eval_absolute_patience'] must be >= 0.")
+    if cfg_int("eval_absolute_min_iteration") < 0:
+        raise ValueError("CONFIG['eval_absolute_min_iteration'] must be >= 0.")
     if cfg_float("eval_absolute_delta") < 0.0:
         raise ValueError("CONFIG['eval_absolute_delta'] must be >= 0.")
     if cfg_str("eval_absolute_action") not in {"abort", "restore_best", "warn"}:

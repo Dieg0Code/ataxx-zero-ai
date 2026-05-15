@@ -32,6 +32,7 @@
   "eval_absolute_patience": 2,
   "eval_absolute_delta": 0.03,
   "eval_absolute_action": "abort",
+  "eval_absolute_min_iteration": 36,
   "save_every": 1,
   "keep_last_n_local_checkpoints": 2,
   "max_pending_hf_uploads": 12,
