@@ -231,6 +231,32 @@ PYTHONUTF8=1 kaggle kernels push -p .
 
 El notebook es la única "config" — todos los hiperparámetros viven en su primera celda.
 
+### Ver métricas en la app local
+
+Para traer un run completo desde Hugging Face usa el flujo unificado:
+
+```bash
+uv run python scripts/fetch_hf_run.py policy_spatial_v10
+```
+
+Lee `HF_TOKEN` desde `.env` o desde el entorno. Descarga metadata, genera el CSV, baja buffers y guarda el mejor checkpoint evaluado junto al ultimo checkpoint en `runs_history/<run_id>/`.
+
+Después de bajar historiales con `scripts/fetch_run_history.py`, puedes abrir una pantalla Pygame con el mismo estilo de la arena:
+
+```bash
+uv run python scripts/view_run_metrics.py
+```
+
+La pantalla lee `runs_history/*/*_history.csv`. Usa `up/down` para cambiar de run, `tab` o `right` para cambiar de métrica, `r` para recargar y `q` para salir.
+
+Para jugar contra un checkpoint descargado:
+
+```bash
+uv run python scripts/play_pygame.py --mode play --opponent model --ckpt checkpoints/policy_spatial_v10_iter_222.pt --human-player p1 --sims 400
+```
+
+Usa `--human-player p2` si quieres jugar como azul.
+
 ### Override de hiperparámetros vía CLI
 
 ```bash

@@ -31,11 +31,11 @@ class TestDatasetNumerics(unittest.TestCase):
             pi = np.random.rand(ACTION_SPACE.num_actions).astype(np.float32)
             pi /= float(np.sum(pi))
             value = float(np.random.choice([-1.0, 0.0, 1.0]))
-            self.buffer.save_game([(obs, pi, value)])
+            self.buffer.save_game([(obs, pi, value, 0.0, 0.0)])
 
     def test_augmented_sample_is_finite_and_normalized(self) -> None:
         dataset = AtaxxDataset(buffer=self.buffer, augment=True, reference_buffer=False)
-        board, pi, value = dataset[0]
+        board, pi, value, _count, _mask = dataset[0]
 
         self.assertIsInstance(board, torch.Tensor)
         self.assertIsInstance(pi, torch.Tensor)
@@ -53,7 +53,7 @@ class TestDatasetNumerics(unittest.TestCase):
             obs[0, 0, 0] = float(idx)
             pi = np.zeros(ACTION_SPACE.num_actions, dtype=np.float32)
             pi[0] = 1.0
-            buffer.save_game([(obs, pi, 0.0)])
+            buffer.save_game([(obs, pi, 0.0, 0.0, 0.0)])
 
         train_dataset = AtaxxDataset(
             buffer=buffer,
@@ -79,13 +79,13 @@ class TestDatasetNumerics(unittest.TestCase):
         self.assertTrue(train_markers.isdisjoint(val_markers))
 
     def test_split_train_val_examples_shuffle_is_reproducible(self) -> None:
-        examples: list[tuple[np.ndarray, np.ndarray, float]] = []
+        examples: list[tuple[np.ndarray, np.ndarray, float, float, float]] = []
         for idx in range(10):
             obs = np.zeros((OBSERVATION_CHANNELS, 7, 7), dtype=np.float32)
             obs[0, 0, 0] = float(idx)
             pi = np.zeros(ACTION_SPACE.num_actions, dtype=np.float32)
             pi[0] = 1.0
-            examples.append((obs, pi, 0.0))
+            examples.append((obs, pi, 0.0, 0.0, 0.0))
 
         train_a, val_a = split_train_val_examples(
             all_examples=examples,

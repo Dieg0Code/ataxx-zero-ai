@@ -143,7 +143,7 @@ def _run_parallel_selfplay(
     last_progress_log_s: float,
     opponent_pool_specs: dict[str, CheckpointModelSpec],
     worker_devices: list[str],
-) -> tuple[list[tuple[str, str, list[HistoryEntry], int, int, bool]], float]:
+) -> tuple[list[tuple[str, str, list[HistoryEntry], int, int, bool, int, int]], float]:
     max_workers = len(worker_devices)
     worker_payloads = [
         (
@@ -172,7 +172,7 @@ def _run_parallel_selfplay(
         participant_id: (spec.state_dict, spec.model_cfg)
         for participant_id, spec in opponent_pool_specs.items()
     }
-    episode_results: list[tuple[str, str, list[HistoryEntry], int, int, bool]] = []
+    episode_results: list[tuple[str, str, list[HistoryEntry], int, int, bool, int, int]] = []
     with ProcessPoolExecutor(
         max_workers=max_workers,
         mp_context=mp.get_context("spawn"),
@@ -186,9 +186,9 @@ def _run_parallel_selfplay(
             tuple(worker_devices),
         ),
     ) as executor:
-        futures: dict[Future[tuple[list[HistoryEntry], int, int, bool]], tuple[int, str, str]] = {}
-        submitted_at: dict[Future[tuple[list[HistoryEntry], int, int, bool]], float] = {}
-        ordered_results: list[tuple[int, str, str, list[HistoryEntry], int, int, bool]] = []
+        futures: dict[Future[tuple[list[HistoryEntry], int, int, bool, int, int]], tuple[int, str, str]] = {}
+        submitted_at: dict[Future[tuple[list[HistoryEntry], int, int, bool, int, int]], float] = {}
+        ordered_results: list[tuple[int, str, str, list[HistoryEntry], int, int, bool, int, int]] = []
         for idx, ((_, opponent_type, heuristic_level, _, _), payload) in enumerate(
             zip(episode_specs, worker_payloads, strict=True),
             start=1,
@@ -224,9 +224,19 @@ def _run_parallel_selfplay(
 
             for future in done:
                 idx, opponent_type, heuristic_level = futures[future]
-                game_history, winner, turn_idx, forced_draw = future.result()
+                game_history, winner, turn_idx, forced_draw, final_p1, final_p2 = future.result()
                 ordered_results.append(
-                    (idx, opponent_type, heuristic_level, game_history, winner, turn_idx, forced_draw),
+                    (
+                        idx,
+                        opponent_type,
+                        heuristic_level,
+                        game_history,
+                        winner,
+                        turn_idx,
+                        forced_draw,
+                        final_p1,
+                        final_p2,
+                    ),
                 )
                 submitted_at.pop(future, None)
 
@@ -238,9 +248,28 @@ def _run_parallel_selfplay(
                 last_progress_log_s = now_s
 
         ordered_results.sort(key=lambda item: item[0])
-        for _idx, opponent_type, heuristic_level, game_history, winner, turn_idx, forced_draw in ordered_results:
+        for (
+            _idx,
+            opponent_type,
+            heuristic_level,
+            game_history,
+            winner,
+            turn_idx,
+            forced_draw,
+            final_p1,
+            final_p2,
+        ) in ordered_results:
             episode_results.append(
-                (opponent_type, heuristic_level, game_history, winner, turn_idx, forced_draw),
+                (
+                    opponent_type,
+                    heuristic_level,
+                    game_history,
+                    winner,
+                    turn_idx,
+                    forced_draw,
+                    final_p1,
+                    final_p2,
+                ),
             )
     log(f"[Iteration {iteration}] self-play process workers active: {max_workers}")  # type: ignore[name-defined]
     return episode_results, last_progress_log_s
@@ -291,7 +320,7 @@ def execute_self_play(
         rng=rng,
         opponent_pool_entries=[spec.entry for spec in opponent_pool_specs.values()],
     )
-    episode_results: list[tuple[str, str, list[HistoryEntry], int, int, bool]] = []
+    episode_results: list[tuple[str, str, list[HistoryEntry], int, int, bool, int, int]] = []
     parallel_worker_devices = resolve_parallel_selfplay_worker_devices(
         device=device,
         requested_workers=cfg_int("selfplay_workers"),
@@ -334,7 +363,7 @@ def execute_self_play(
             device=device,
         )
         for episode_seed, opponent_type, heuristic_level, model_player, checkpoint_id in episode_specs:
-            game_history, winner, turn_idx, forced_draw = play_episode(
+            game_history, winner, turn_idx, forced_draw, final_p1, final_p2 = play_episode(
                 mcts=mcts,
                 add_noise=add_noise,
                 temp_threshold=temp_threshold,
@@ -345,7 +374,16 @@ def execute_self_play(
                 opponent_checkpoint_mcts=opponent_mcts_pool.get(checkpoint_id),
             )
             episode_results.append(
-                (opponent_type, heuristic_level, game_history, winner, turn_idx, forced_draw),
+                (
+                    opponent_type,
+                    heuristic_level,
+                    game_history,
+                    winner,
+                    turn_idx,
+                    forced_draw,
+                    final_p1,
+                    final_p2,
+                ),
             )
             now_s = time.perf_counter()
             if (now_s - last_progress_log_s) >= progress_every_s:
@@ -362,6 +400,8 @@ def execute_self_play(
         winner,
         turn_idx,
         forced_draw,
+        final_p1,
+        final_p2,
     ) in enumerate(episode_results, start=1):
         stats[f"episodes_vs_{opponent_type}"] = int(stats[f"episodes_vs_{opponent_type}"]) + 1
         if opponent_type == "heuristic":
@@ -374,6 +414,8 @@ def execute_self_play(
                 game_history=game_history,
                 winner=winner,
                 forced_draw=forced_draw,
+                final_p1_count=int(final_p1),
+                final_p2_count=int(final_p2),
             ),
         )
 

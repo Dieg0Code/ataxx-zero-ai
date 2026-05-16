@@ -131,7 +131,16 @@ def split_train_val_examples(
     return train_examples, val_examples
 
 
-class AtaxxDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+BatchTuple = tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]
+
+
+class AtaxxDataset(Dataset[BatchTuple]):
     """Dataset wrapper from replay buffer examples."""
 
     def __init__(
@@ -143,8 +152,8 @@ class AtaxxDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
         examples: list[TrainingExample] | None = None,
     ) -> None:
         self.augment = augment
-        self.examples: list[tuple[np.ndarray, np.ndarray, float]] | deque[
-            tuple[np.ndarray, np.ndarray, float]
+        self.examples: list[tuple[np.ndarray, np.ndarray, float, float, float]] | deque[
+            tuple[np.ndarray, np.ndarray, float, float, float]
         ]
         if examples is not None:
             self.examples = list(examples)
@@ -165,8 +174,11 @@ class AtaxxDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.examples)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        observation, policy, value = self.examples[index]
+    def __getitem__(self, index: int) -> BatchTuple:
+        example = self.examples[index]
+        observation, policy, value = example[0], example[1], example[2]
+        count = float(example[3]) if len(example) > 3 else 0.0
+        is_human = float(example[4]) if len(example) > 4 else 0.0
 
         transform_id = 0
         if self.augment:
@@ -178,10 +190,13 @@ class AtaxxDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
         board_tensor = torch.from_numpy(observation).float()
         pi_tensor = torch.from_numpy(policy).float()
         value_tensor = torch.tensor(value, dtype=torch.float32)
-        return board_tensor, pi_tensor, value_tensor
+        count_tensor = torch.tensor(count, dtype=torch.float32)
+        # value_mask = 1.0 para self-play, 0.0 para humanos (skip value loss).
+        value_mask_tensor = torch.tensor(1.0 - is_human, dtype=torch.float32)
+        return board_tensor, pi_tensor, value_tensor, count_tensor, value_mask_tensor
 
 
-class ValidationDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+class ValidationDataset(Dataset[BatchTuple]):
     """Hold-out validation split from replay buffer."""
 
     def __init__(
@@ -208,9 +223,14 @@ class ValidationDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
     def __len__(self) -> int:
         return len(self.examples)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        observation, policy, value = self.examples[index]
+    def __getitem__(self, index: int) -> BatchTuple:
+        example = self.examples[index]
+        observation, policy, value = example[0], example[1], example[2]
+        count = float(example[3]) if len(example) > 3 else 0.0
+        is_human = float(example[4]) if len(example) > 4 else 0.0
         board_tensor = torch.from_numpy(observation).float()
         pi_tensor = torch.from_numpy(policy).float()
         value_tensor = torch.tensor(value, dtype=torch.float32)
-        return board_tensor, pi_tensor, value_tensor
+        count_tensor = torch.tensor(count, dtype=torch.float32)
+        value_mask_tensor = torch.tensor(1.0 - is_human, dtype=torch.float32)
+        return board_tensor, pi_tensor, value_tensor, count_tensor, value_mask_tensor

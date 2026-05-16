@@ -220,7 +220,7 @@ def _build_play_recorder(
     p2_agent: Agent,
     p1_label: str,
     p2_label: str,
-) -> "ReplayRecorder | None":
+) -> ReplayRecorder | None:
     import time
 
     from ui.arena.replay_recorder import ReplayMetadata, ReplayRecorder
@@ -352,7 +352,15 @@ def main() -> None:
             flip=_flip_play,
         )
         if recorder is not None and outcome.result is not None:
-            recorder.finalize(winner=int(outcome.result), forced_draw=False)
+            final_p1, final_p2 = (
+                outcome.final_counts if outcome.final_counts is not None else (None, None)
+            )
+            recorder.finalize(
+                winner=int(outcome.result),
+                forced_draw=False,
+                final_p1_count=final_p1,
+                final_p2_count=final_p2,
+            )
         if outcome.reason == "quit":
             break
         # "restart" -> recrear board y volver a llamar (loop continue).

@@ -84,8 +84,19 @@ class ReplayRecorder:
         policy_arr = np.asarray(policy, dtype=np.float32)
         self._history.append((observation, policy_arr, int(player), 0.0))
 
-    def finalize(self, *, winner: int, forced_draw: bool = False) -> Path | None:
+    def finalize(
+        self,
+        *,
+        winner: int,
+        forced_draw: bool = False,
+        final_p1_count: int | None = None,
+        final_p2_count: int | None = None,
+    ) -> Path | None:
         """Convierte la historia en training examples y persiste a disco.
+
+        Si se pasan los counts finales, el NPZ incluye `counts` (diff
+        p1-p2 desde la perspectiva del jugador que mueve). Cuando no se
+        pasan, el NPZ omite la key y los consumidores deben asumir 0.
 
         Returns:
             Path del NPZ creado, o `None` si no hubo movimientos (forfeit) — en
@@ -101,6 +112,8 @@ class ReplayRecorder:
             self._history,
             winner=int(winner),
             forced_draw=bool(forced_draw),
+            final_p1_count=final_p1_count,
+            final_p2_count=final_p2_count,
         )
         if not examples:
             return None
@@ -108,28 +121,46 @@ class ReplayRecorder:
         observations = np.stack([e[0] for e in examples]).astype(np.float32, copy=False)
         policies = np.stack([e[1] for e in examples]).astype(np.float32, copy=False)
         values = np.array([e[2] for e in examples], dtype=np.float32)
+        counts = np.array([e[3] for e in examples], dtype=np.float32)
 
         self._save_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            self._save_path,
-            observations=observations,
-            policies=policies,
-            values=values,
-        )
+        if final_p1_count is not None and final_p2_count is not None:
+            np.savez_compressed(
+                self._save_path,
+                observations=observations,
+                policies=policies,
+                values=values,
+                counts=counts,
+            )
+            has_counts = True
+        else:
+            np.savez_compressed(
+                self._save_path,
+                observations=observations,
+                policies=policies,
+                values=values,
+            )
+            has_counts = False
 
         sidecar = self._save_path.with_suffix(".json")
+        shapes = {
+            "observations": list(observations.shape),
+            "policies": list(policies.shape),
+            "values": list(values.shape),
+        }
+        if has_counts:
+            shapes["counts"] = list(counts.shape)
         payload = {
             **self._metadata.to_dict(),
             "n_moves": len(self._history),
             "winner": int(winner),
             "forced_draw": bool(forced_draw),
             "value_dtype": "float32",
-            "shapes": {
-                "observations": list(observations.shape),
-                "policies": list(policies.shape),
-                "values": list(values.shape),
-            },
+            "shapes": shapes,
         }
+        if final_p1_count is not None and final_p2_count is not None:
+            payload["final_p1_count"] = int(final_p1_count)
+            payload["final_p2_count"] = int(final_p2_count)
         sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return self._save_path
 

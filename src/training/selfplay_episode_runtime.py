@@ -127,7 +127,7 @@ def play_episode(
     opponent_heuristic_level: str,
     model_player: int,
     opponent_checkpoint_mcts: MCTS | None = None,
-) -> tuple[list[HistoryEntry], int, int, bool]:
+) -> tuple[list[HistoryEntry], int, int, bool, int, int]:
     from game.board import AtaxxBoard
 
     board = AtaxxBoard()
@@ -230,7 +230,14 @@ def play_episode(
         board.step(move)
         model_root = mcts.advance_root(model_root, ACTION_SPACE.encode(move))
 
-    return game_history, board.get_result(), turn_idx, board.is_forced_draw()
+    return (
+        game_history,
+        board.get_result(),
+        turn_idx,
+        board.is_forced_draw(),
+        int(board.p1_count),
+        int(board.p2_count),
+    )
 
 
 def build_sequential_checkpoint_mcts_pool(
@@ -321,7 +328,7 @@ def init_selfplay_process_worker(
 
 def run_episode_in_process_worker(
     payload: tuple[int, str, str, int, bool, int, str],
-) -> tuple[list[HistoryEntry], int, int, bool]:
+) -> tuple[list[HistoryEntry], int, int, bool, int, int]:
     global _WORKER_MCTS
     global _WORKER_OPPONENT_MCTS_POOL
     if _WORKER_MCTS is None:

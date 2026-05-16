@@ -19,7 +19,8 @@ class TestTrainingBootstrap(unittest.TestCase):
         )
 
         self.assertGreater(len(examples), 0)
-        for observation, policy, value in examples:
+        for example in examples:
+            observation, policy, value = example[0], example[1], example[2]
             self.assertEqual(observation.shape, (OBSERVATION_CHANNELS, BOARD_SIZE, BOARD_SIZE))
             self.assertEqual(policy.shape, (ACTION_SPACE.num_actions,))
             self.assertAlmostEqual(float(np.sum(policy)), 1.0, places=6)

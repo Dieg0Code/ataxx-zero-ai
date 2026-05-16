@@ -25,6 +25,8 @@ class _ScriptedBoard:
     def __init__(self) -> None:
         self.current_player = 1
         self._turn = 0
+        self.p1_count = 25
+        self.p2_count = 24
 
     def is_game_over(self) -> bool:
         return self._turn >= 2
@@ -63,7 +65,7 @@ class TestTrainingSelfplayEpisodeRuntime(unittest.TestCase):
             "training.selfplay_episode_runtime.cfg_bool",
             return_value=False,
         ):
-            history, winner, turn_idx, forced_draw = play_episode(
+            history, winner, turn_idx, forced_draw, _final_p1, _final_p2 = play_episode(
                 mcts=cast(MCTS, _FakeMCTS()),
                 add_noise=False,
                 temp_threshold=0,
@@ -106,7 +108,7 @@ class TestTrainingSelfplayEpisodeRuntime(unittest.TestCase):
             "training.selfplay_episode_runtime.cfg_bool",
             return_value=False,
         ):
-            history, winner, turn_idx, forced_draw = play_episode(
+            history, winner, turn_idx, forced_draw, _final_p1, _final_p2 = play_episode(
                 mcts=cast(MCTS, _FakeMCTS()),
                 add_noise=False,
                 temp_threshold=0,

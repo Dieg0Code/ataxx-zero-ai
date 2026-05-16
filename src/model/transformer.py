@@ -19,12 +19,16 @@ class AtaxxTransformerNet(nn.Module):
         num_layers: int = 6,
         dim_feedforward: int = 512,
         dropout: float = 0.1,
+        value_head_depth: int = 1,
+        count_head_enabled: bool = False,
     ) -> None:
         super().__init__()
         self.board_size = BOARD_SIZE
         self.num_cells = self.board_size * self.board_size
         self.num_actions = ACTION_SPACE.num_actions
         self.num_input_channels = OBSERVATION_CHANNELS
+        self.value_head_depth = int(value_head_depth)
+        self.count_head_enabled = bool(count_head_enabled)
 
         self.input_proj = nn.Linear(self.num_input_channels, d_model)
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_cells + 1, d_model))
@@ -48,14 +52,41 @@ class AtaxxTransformerNet(nn.Module):
             nn.GELU(),
             nn.Linear(d_model, 1),
         )
-        self.value_head = nn.Sequential(
-            nn.LayerNorm(d_model),
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model, 1),
-            nn.Tanh(),
-        )
+        # value_head_depth=1 (legacy): LN + Linear(d, d) + GELU + Dropout + Linear(d, 1) + Tanh
+        # value_head_depth=2 (v11):    LN + Linear(d, 2d) + GELU + LN + Linear(2d, d) + GELU + Dropout + Linear(d, 1) + Tanh
+        if self.value_head_depth >= 2:
+            self.value_head = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, d_model * 2),
+                nn.GELU(),
+                nn.LayerNorm(d_model * 2),
+                nn.Linear(d_model * 2, d_model),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_model, 1),
+                nn.Tanh(),
+            )
+        else:
+            self.value_head = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, d_model),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_model, 1),
+                nn.Tanh(),
+            )
+
+        # Auxiliary count head: predice diferencia de piezas final desde
+        # la perspectiva del jugador que mueve. Solo activa cuando v11.
+        if self.count_head_enabled:
+            self.count_head: nn.Module = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, d_model // 2),
+                nn.GELU(),
+                nn.Linear(d_model // 2, 1),
+            )
+        else:
+            self.count_head = nn.Identity()  # placeholder
 
         self._build_action_cell_indices()
         self._init_weights()
@@ -115,6 +146,20 @@ class AtaxxTransformerNet(nn.Module):
             policy_logits: [batch, num_actions]
             value: [batch, 1]
         """
+        policy_logits, value, _count = self.forward_with_count(x, action_mask=action_mask)
+        return policy_logits, value
+
+    def forward_with_count(
+        self,
+        x: torch.Tensor,
+        action_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Forward que devuelve tambien el `count` auxiliar (diff de piezas).
+
+        Si `count_head_enabled=False`, devuelve un tensor de zeros con la
+        misma shape que value. Asi el trainer puede activar/desactivar la
+        count loss sin ramificar el forward.
+        """
         batch_size = x.size(0)
         x = x.permute(0, 2, 3, 1).contiguous().view(
             batch_size,
@@ -143,7 +188,11 @@ class AtaxxTransformerNet(nn.Module):
             policy_logits = policy_logits.masked_fill(action_mask <= 0, min_value)
 
         value = self.value_head(cls_out)
-        return policy_logits, value
+        if self.count_head_enabled:
+            count = self.count_head(cls_out)
+        else:
+            count = torch.zeros_like(value)
+        return policy_logits, value, count
 
     def predict(
         self,

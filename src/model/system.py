@@ -21,11 +21,15 @@ class AtaxxZero(pl.LightningModule):
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-4,
         value_loss_coeff: float = 0.5,
+        count_loss_coeff: float = 0.0,
         d_model: int = 128,
         nhead: int = 8,
         num_layers: int = 6,
         dim_feedforward: int = 512,
         dropout: float = 0.1,
+        value_head_depth: int = 1,
+        count_head_enabled: bool = False,
+        symmetry_augmentation: bool = False,
         scheduler_type: str = "cosine",
         lr_gamma: float = 0.1,
         milestones: list[int] | None = None,
@@ -39,6 +43,8 @@ class AtaxxZero(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.value_loss_coeff = value_loss_coeff
+        self.count_loss_coeff = count_loss_coeff
+        self.symmetry_augmentation = bool(symmetry_augmentation)
         self.scheduler_type = scheduler_type
         self.lr_gamma = lr_gamma
         self.milestones = milestones
@@ -50,6 +56,8 @@ class AtaxxZero(pl.LightningModule):
             num_layers=num_layers,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
+            value_head_depth=value_head_depth,
+            count_head_enabled=count_head_enabled,
         )
         self.example_input_array = torch.zeros(1, OBSERVATION_CHANNELS, 7, 7)
 
@@ -80,11 +88,24 @@ class AtaxxZero(pl.LightningModule):
             return args[0]
         raise ValueError(f"{caller} expects a batch.")
 
-    def _coerce_train_batch(self, batch_obj: object, caller: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _coerce_train_batch(
+        self,
+        batch_obj: object,
+        caller: str,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         if not isinstance(batch_obj, Sequence):
             raise TypeError(f"{caller} expected a sequence batch.")
-        if len(batch_obj) != 3:
-            raise ValueError(f"{caller} expected 3 elements: (boards, target_pis, target_vs).")
+        if len(batch_obj) not in (3, 4, 5):
+            raise ValueError(
+                f"{caller} expected 3, 4, or 5 elements: "
+                "(boards, target_pis, target_vs[, target_counts[, value_mask]]).",
+            )
 
         boards_obj = batch_obj[0]
         target_pis_obj = batch_obj[1]
@@ -95,21 +116,65 @@ class AtaxxZero(pl.LightningModule):
             raise TypeError(f"{caller} expected target_pis as torch.Tensor.")
         if not isinstance(target_vs_obj, torch.Tensor):
             raise TypeError(f"{caller} expected target_vs as torch.Tensor.")
-        return boards_obj, target_pis_obj, target_vs_obj
+
+        target_counts_obj: torch.Tensor | None = None
+        value_mask_obj: torch.Tensor | None = None
+        if len(batch_obj) >= 4:
+            candidate = batch_obj[3]
+            if candidate is not None:
+                if not isinstance(candidate, torch.Tensor):
+                    raise TypeError(f"{caller} expected target_counts as torch.Tensor.")
+                target_counts_obj = candidate
+        if len(batch_obj) >= 5:
+            mask_candidate = batch_obj[4]
+            if mask_candidate is not None:
+                if not isinstance(mask_candidate, torch.Tensor):
+                    raise TypeError(f"{caller} expected value_mask as torch.Tensor.")
+                value_mask_obj = mask_candidate
+        return boards_obj, target_pis_obj, target_vs_obj, target_counts_obj, value_mask_obj
 
     def _common_step(
         self,
-        batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch: tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor | None,
+            torch.Tensor | None,
+        ],
     ) -> dict[str, torch.Tensor]:
-        boards, target_pis, target_vs = batch
+        boards, target_pis, target_vs, target_counts, value_mask = batch
+        # Symmetry augmentation D4: aplica un elemento aleatorio por ejemplo
+        # del batch antes del forward. value/count son invariantes bajo D4,
+        # asi que solo obs+policy se transforman. value_mask tampoco cambia.
+        if self.symmetry_augmentation and self.training:
+            from data.symmetry import random_d4_augment_batch
+            boards, target_pis = random_d4_augment_batch(boards, target_pis)
         # Use legality derived from the observed board state, not from sparse targets.
         action_mask = self.model.build_action_mask(boards)
-        pi_logits, v_pred = self(boards, action_mask=action_mask)
+        pi_logits, v_pred, count_pred = self.model.forward_with_count(
+            boards,
+            action_mask=action_mask,
+        )
 
-        loss_v = functional.mse_loss(v_pred.view(-1), target_vs.view(-1))
+        # Value loss enmascarada: ejemplos con mask=False no contribuyen.
+        v_diff_sq = (v_pred.view(-1) - target_vs.view(-1)).pow(2)
+        if value_mask is None:
+            loss_v = v_diff_sq.mean()
+        else:
+            mask_flat = value_mask.view(-1).to(v_diff_sq.dtype)
+            denom = torch.clamp(mask_flat.sum(), min=1.0)
+            loss_v = (v_diff_sq * mask_flat).sum() / denom
+
         log_probs = functional.log_softmax(pi_logits, dim=1)
         loss_pi = -torch.sum(target_pis * log_probs) / target_pis.size(0)
-        loss = loss_pi + (self.value_loss_coeff * loss_v)
+
+        if self.count_loss_coeff > 0.0 and target_counts is not None:
+            loss_count = functional.mse_loss(count_pred.view(-1), target_counts.view(-1))
+        else:
+            loss_count = torch.tensor(0.0, device=v_pred.device, dtype=v_pred.dtype)
+
+        loss = loss_pi + (self.value_loss_coeff * loss_v) + (self.count_loss_coeff * loss_count)
 
         with torch.no_grad():
             pred_actions = torch.argmax(pi_logits, dim=1)
@@ -121,6 +186,7 @@ class AtaxxZero(pl.LightningModule):
             "loss": loss,
             "loss_value": loss_v,
             "loss_policy": loss_pi,
+            "loss_count": loss_count,
             "policy_accuracy": policy_accuracy,
             "value_mae": value_mae,
         }
@@ -140,6 +206,7 @@ class AtaxxZero(pl.LightningModule):
                     "train/loss": metrics["loss"],
                     "train/loss_value": metrics["loss_value"],
                     "train/loss_policy": metrics["loss_policy"],
+                    "train/loss_count": metrics["loss_count"],
                     "train/policy_accuracy": metrics["policy_accuracy"],
                     "train/value_mae": metrics["value_mae"],
                 },
@@ -165,6 +232,7 @@ class AtaxxZero(pl.LightningModule):
                     "val/loss": metrics["loss"],
                     "val/loss_value": metrics["loss_value"],
                     "val/loss_policy": metrics["loss_policy"],
+                    "val/loss_count": metrics["loss_count"],
                     "val/policy_accuracy": metrics["policy_accuracy"],
                     "val/value_mae": metrics["value_mae"],
                 },

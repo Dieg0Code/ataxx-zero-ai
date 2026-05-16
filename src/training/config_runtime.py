@@ -19,6 +19,7 @@ from training.config_validation_runtime import (
     validate_bootstrap_warmup_config,
     validate_reward_shaping_config,
     validate_supported_heuristic_csv,
+    validate_v11_pipeline_config,
 )
 from training.league_config_runtime import DEFAULT_LEAGUE_CONFIG, validate_league_config
 
@@ -129,8 +130,10 @@ CONFIG: dict[str, int | float | bool | str] = {
     "warmup_epochs": 8,
     "warmup_heuristic_level": "sentinel",
     "warmup_heuristic_levels": "hard,apex,sentinel",
-    "pretrain_dataset_path": "",
-    "pretrain_epochs": 0,
+    "pretrain_dataset_path": "", "pretrain_epochs": 0,
+    "human_replay_path": "", "human_batch_fraction": 0.0, "human_value_mask": False,
+    "symmetry_augmentation": False,
+    "value_head_depth": 1, "count_head_enabled": False, "count_loss_coeff": 0.0,
 }
 def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parents[2]
@@ -434,6 +437,7 @@ def validate_config() -> None:
     if cfg_int("eval_regression_patience") < 0:
         raise ValueError("CONFIG['eval_regression_patience'] must be >= 0.")
     validate_absolute_eval_gate_config(cfg_float=cfg_float, cfg_int=cfg_int, cfg_str=cfg_str)
+    validate_v11_pipeline_config(cfg_bool=cfg_bool, cfg_float=cfg_float, cfg_str=cfg_str)
     if not is_supported_heuristic_level(cfg_str("warmup_heuristic_level")):
         raise ValueError(
             "CONFIG['warmup_heuristic_level'] must be a supported heuristic level.",
@@ -485,15 +489,11 @@ def validate_config() -> None:
                 f"(got {heu_sum:.6f}).",
             )
     if not cfg_bool("strict_probs") and not np.isclose(opp_sum, 1.0, atol=1e-6):
-        log(
-            f"Opponent probs sum to {opp_sum:.6f}; they will be normalized automatically.",
-            verbose_only=True,
-        )
+        log(f"Opponent probs sum to {opp_sum:.6f}; they will be normalized automatically.", verbose_only=True)
     if not cfg_bool("strict_probs") and not np.isclose(heu_sum, 1.0, atol=1e-6):
-        log(
-            f"Heuristic level probs sum to {heu_sum:.6f}; they will be normalized automatically.",
-            verbose_only=True,
-        )
+        log(f"Heuristic level probs sum to {heu_sum:.6f}; they will be normalized automatically.", verbose_only=True)
+
+
 def resolve_trainer_precision(accelerator: str) -> TrainerPrecision:
     configured = cast(TrainerPrecision, cfg_str("trainer_precision"))
     return configured if accelerator == "gpu" else cast(TrainerPrecision, "32-true")

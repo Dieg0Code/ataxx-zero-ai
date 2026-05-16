@@ -66,7 +66,19 @@ def prepare_train_val_examples(
     *,
     buffer: ReplayBuffer,
     split_seed: int,
+    human_examples: list[TrainingExample] | None = None,
+    human_fraction: float = 0.0,
 ) -> tuple[list[TrainingExample], list[TrainingExample]]:
+    """Construye train/val splits desde el replay buffer.
+
+    Si `human_examples` se pasa y `human_fraction > 0`, una muestra del
+    buffer humano se concatena al train set proporcional a la fraccion
+    pedida (cantidad = ceil(len(train) * fraction / (1 - fraction))).
+    El val set NO recibe ejemplos humanos para que el eval interno siga
+    midiendo calidad sobre self-play.
+    """
+    import random
+
     from data.dataset import split_train_val_examples
     from data.replay_buffer import sample_recent_mix
 
@@ -84,6 +96,23 @@ def prepare_train_val_examples(
         seed=split_seed + 17,
         sample_size=len(train_examples),
     )
+
+    if human_examples and human_fraction > 0.0 and len(train_examples) > 0:
+        # Calcular cuantos humanos meter para alcanzar la fraccion deseada.
+        # human_n / (selfplay_n + human_n) = fraction
+        # => human_n = selfplay_n * fraction / (1 - fraction)
+        denom = max(1e-6, 1.0 - human_fraction)
+        human_n = round(len(train_examples) * human_fraction / denom)
+        human_n = min(human_n, len(human_examples) * 4)  # cap a 4x el pool
+        if human_n > 0:
+            rng = random.Random(split_seed + 31)  # noqa: S311 - not crypto
+            picked: list[TrainingExample] = []
+            pool_size = len(human_examples)
+            for _ in range(human_n):
+                picked.append(human_examples[rng.randrange(pool_size)])
+            train_examples = train_examples + picked
+            rng.shuffle(train_examples)
+
     return train_examples, val_examples
 
 
@@ -154,7 +183,41 @@ def build_val_loader(
     )
 
 
-def load_npz_training_examples(path: str) -> list[TrainingExample]:
+def load_human_replay_buffer() -> tuple[list[TrainingExample], float]:
+    """Carga el replay buffer humano permanente segun config v11.
+
+    Returns:
+        (examples, fraction) -- lista vacia y 0.0 si no hay config.
+        Ya aplica `force_human=human_value_mask` para que el value loss
+        de esos ejemplos quede enmascarado en el trainer.
+    """
+    human_path = cfg_str("human_replay_path").strip()
+    fraction = cfg_float("human_batch_fraction")
+    if not human_path or fraction <= 0.0:
+        return [], 0.0
+    examples = load_npz_training_examples(
+        human_path,
+        force_human=cfg_bool("human_value_mask"),
+    )
+    log(
+        f"Loaded {len(examples)} human replay examples from {human_path} "
+        f"(fraction={fraction:.2f}, value_mask={cfg_bool('human_value_mask')}).",
+    )
+    return examples, fraction
+
+
+def load_npz_training_examples(
+    path: str,
+    *,
+    force_human: bool = False,
+) -> list[TrainingExample]:
+    """Carga ejemplos desde un NPZ curado.
+
+    `force_human=True` marca todos los ejemplos como humanos (is_human_flag=1.0)
+    sin importar el `source_masks` del NPZ — util para el `human_replay_buffer`
+    permanente del v11. Si `False`, respeta el `source_masks` interno (NPZs viejos
+    sin la key se cargan como is_human_flag=0.0).
+    """
     import numpy as np
 
     dataset_path = Path(path)
@@ -164,7 +227,19 @@ def load_npz_training_examples(path: str) -> list[TrainingExample]:
     observations = data["observations"].astype(np.float32, copy=False)
     policies = data["policies"].astype(np.float32, copy=False)
     values = data["values"].astype(np.float32, copy=False)
-    examples = list(zip(observations, policies, values, strict=True))
+    if "counts" in data.files:
+        counts = data["counts"].astype(np.float32, copy=False)
+    else:
+        counts = np.zeros(len(values), dtype=np.float32)
+    if force_human:
+        is_human_flags = np.ones(len(values), dtype=np.float32)
+    elif "source_masks" in data.files:
+        is_human_flags = data["source_masks"].astype(np.float32, copy=False)
+    else:
+        is_human_flags = np.zeros(len(values), dtype=np.float32)
+    examples = list(
+        zip(observations, policies, values, counts, is_human_flags, strict=True),
+    )
     if len(examples) == 0:
         raise ValueError(f"Pretrain dataset is empty: {dataset_path}")
     return examples

@@ -145,9 +145,14 @@ class TestTrainingStepNumerics(unittest.TestCase):
         target_vs = torch.zeros(2)
         pi_logits = torch.randn(2, ACTION_SPACE.num_actions)
         v_pred = torch.zeros(2, 1)
+        c_pred = torch.zeros(2, 1)
 
-        with patch.object(system.model, "forward", return_value=(pi_logits, v_pred)) as forward_spy:
-            _ = system._common_step((boards, target_pis, target_vs))
+        with patch.object(
+            system.model,
+            "forward_with_count",
+            return_value=(pi_logits, v_pred, c_pred),
+        ) as forward_spy:
+            _ = system._common_step((boards, target_pis, target_vs, None, None))
             args, kwargs = forward_spy.call_args
 
         self.assertEqual(len(args), 1)
@@ -174,9 +179,14 @@ class TestTrainingStepNumerics(unittest.TestCase):
         target_vs = torch.tensor([1.0, -1.0], dtype=torch.float32)
         pi_logits = torch.zeros(2, ACTION_SPACE.num_actions)
         v_pred = torch.tensor([[0.0], [0.0]], dtype=torch.float32)
+        c_pred = torch.zeros(2, 1)
 
-        with patch.object(system.model, "forward", return_value=(pi_logits, v_pred)):
-            metrics = system._common_step((boards, target_pis, target_vs))
+        with patch.object(
+            system.model,
+            "forward_with_count",
+            return_value=(pi_logits, v_pred, c_pred),
+        ):
+            metrics = system._common_step((boards, target_pis, target_vs, None, None))
 
         expected_v = functional.mse_loss(v_pred.view(-1), target_vs.view(-1))
         expected_pi = -torch.sum(target_pis * functional.log_softmax(pi_logits, dim=1)) / 2.0
@@ -185,6 +195,78 @@ class TestTrainingStepNumerics(unittest.TestCase):
         self.assertTrue(torch.isclose(metrics["loss_value"], expected_v))
         self.assertTrue(torch.isclose(metrics["loss_policy"], expected_pi))
         self.assertTrue(torch.isclose(metrics["loss"], expected_total))
+
+
+    def test_common_step_value_mask_zeros_drops_value_loss(self) -> None:
+        """Con value_mask=all_zeros, la value loss debe ser 0 (todo enmascarado)
+        y la loss total queda igual a la policy loss."""
+        system = AtaxxZero(
+            learning_rate=1e-3,
+            value_loss_coeff=0.5,
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+            scheduler_type="none",
+        )
+        boards = torch.randn(2, OBSERVATION_CHANNELS, 7, 7)
+        target_pis = torch.zeros(2, ACTION_SPACE.num_actions)
+        target_pis[0, 0] = 1.0
+        target_pis[1, 1] = 1.0
+        target_vs = torch.tensor([1.0, -1.0], dtype=torch.float32)
+        value_mask = torch.tensor([0.0, 0.0], dtype=torch.float32)
+        pi_logits = torch.zeros(2, ACTION_SPACE.num_actions)
+        v_pred = torch.tensor([[0.5], [-0.5]], dtype=torch.float32)
+        c_pred = torch.zeros(2, 1)
+
+        with patch.object(
+            system.model,
+            "forward_with_count",
+            return_value=(pi_logits, v_pred, c_pred),
+        ):
+            metrics = system._common_step(
+                (boards, target_pis, target_vs, None, value_mask),
+            )
+
+        expected_pi = -torch.sum(target_pis * functional.log_softmax(pi_logits, dim=1)) / 2.0
+        self.assertTrue(torch.isclose(metrics["loss_value"], torch.tensor(0.0)))
+        self.assertTrue(torch.isclose(metrics["loss"], expected_pi))
+
+    def test_common_step_count_loss_applies_when_coeff_positive(self) -> None:
+        system = AtaxxZero(
+            learning_rate=1e-3,
+            value_loss_coeff=0.0,
+            count_loss_coeff=0.1,
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+            count_head_enabled=True,
+            scheduler_type="none",
+        )
+        boards = torch.randn(2, OBSERVATION_CHANNELS, 7, 7)
+        target_pis = torch.zeros(2, ACTION_SPACE.num_actions)
+        target_pis[0, 0] = 1.0
+        target_pis[1, 1] = 1.0
+        target_vs = torch.tensor([1.0, -1.0], dtype=torch.float32)
+        target_counts = torch.tensor([5.0, -3.0], dtype=torch.float32)
+        pi_logits = torch.zeros(2, ACTION_SPACE.num_actions)
+        v_pred = torch.zeros(2, 1)
+        c_pred = torch.tensor([[1.0], [-1.0]], dtype=torch.float32)
+
+        with patch.object(
+            system.model,
+            "forward_with_count",
+            return_value=(pi_logits, v_pred, c_pred),
+        ):
+            metrics = system._common_step(
+                (boards, target_pis, target_vs, target_counts, None),
+            )
+
+        expected_count = functional.mse_loss(c_pred.view(-1), target_counts.view(-1))
+        self.assertTrue(torch.isclose(metrics["loss_count"], expected_count))
 
 
 if __name__ == "__main__":

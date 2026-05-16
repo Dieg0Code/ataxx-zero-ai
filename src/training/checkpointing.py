@@ -119,12 +119,22 @@ class HuggingFaceCheckpointer:
             observations = np.asarray([ex[0] for ex in all_examples], dtype=np.float32)
             policies = np.asarray([ex[1] for ex in all_examples], dtype=np.float32)
             values = np.asarray([ex[2] for ex in all_examples], dtype=np.float32)
+            counts = np.asarray(
+                [ex[3] if len(ex) > 3 else 0.0 for ex in all_examples],
+                dtype=np.float32,
+            )
+            source_masks = np.asarray(
+                [bool(ex[4]) if len(ex) > 4 else False for ex in all_examples],
+                dtype=np.uint8,
+            )
             buffer_path = self.local_dir / buffer_name
             np.savez_compressed(
                 buffer_path,
                 observations=observations,
                 policies=policies,
                 values=values,
+                counts=counts,
+                source_masks=source_masks,
             )
 
         metadata: dict[str, Any] = {
@@ -248,7 +258,24 @@ class HuggingFaceCheckpointer:
                 )
                 policies = data["policies"]
                 values = data["values"]
-                examples = list(zip(observations, policies, values, strict=True))
+                if "counts" in data.files:
+                    counts = data["counts"]
+                else:
+                    counts = np.zeros(len(values), dtype=np.float32)
+                if "source_masks" in data.files:
+                    is_human_flags = data["source_masks"].astype(np.float32, copy=False)
+                else:
+                    is_human_flags = np.zeros(len(values), dtype=np.float32)
+                examples = list(
+                    zip(
+                        observations,
+                        policies,
+                        values,
+                        counts,
+                        is_human_flags,
+                        strict=True,
+                    ),
+                )
                 buffer.clear()
                 buffer.save_game(examples)
             except (OSError, KeyError, ValueError):

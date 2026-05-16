@@ -8,7 +8,15 @@ import numpy.typing as npt
 
 Observation = npt.NDArray[np.float32]
 PolicyTarget = npt.NDArray[np.float32]
-TrainingExample = tuple[Observation, PolicyTarget, float]
+# 5-tuple: (observation, policy_target, value_target, count_diff_target, is_human_flag).
+# `count_diff` es la diferencia final de piezas (p1_final - p2_final) desde
+# la perspectiva del jugador que mueve en ese ejemplo. Si no se conoce
+# (NPZ viejo, partida sin terminar), se setea a 0.0.
+# `is_human_flag` es 1.0 si el ejemplo viene de una partida humana, 0.0
+# si viene de self-play o heuristica. El trainer lo usa para construir
+# el `value_mask` por batch (humanos no aportan a value loss cuando
+# `human_value_mask` esta activo).
+TrainingExample = tuple[Observation, PolicyTarget, float, float, float]
 
 
 def _pick_indices_with_min_repeats(

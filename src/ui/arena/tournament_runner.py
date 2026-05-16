@@ -566,7 +566,15 @@ def _play_match_via_arena(
         flip=lambda: _flip(screen, window, display_scale),
     )
     if outcome.result is not None:
-        recorder.finalize(winner=int(outcome.result), forced_draw=False)
+        final_p1, final_p2 = (
+            outcome.final_counts if outcome.final_counts is not None else (None, None)
+        )
+        recorder.finalize(
+            winner=int(outcome.result),
+            forced_draw=False,
+            final_p1_count=final_p1,
+            final_p2_count=final_p2,
+        )
     h, a, hm = _counts_for_human(outcome.board, human_side)
     return h, a, hm, outcome.reason
 

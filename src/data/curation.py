@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,6 +21,18 @@ class CuratedDataset:
     policies: np.ndarray
     values: np.ndarray
     report: dict[str, Any]
+    # Boolean per-example: True = el ejemplo viene de una partida humana.
+    # Usado por el trainer para enmascarar value loss (solo policy distillation
+    # de humanos) cuando `human_value_mask=True`. NPZ viejos que no traen
+    # esta key se cargan con todo `False` (i.e., todos value_mask=True).
+    source_masks: np.ndarray = field(
+        default_factory=lambda: np.zeros((0,), dtype=bool),
+    )
+    # Diff de piezas final, signado por la perspectiva del jugador. Si no
+    # hubo counts en la fuente, se carga como zeros.
+    counts: np.ndarray = field(
+        default_factory=lambda: np.zeros((0,), dtype=np.float32),
+    )
 
 
 def _load_sidecar(path: Path) -> dict[str, Any]:
@@ -117,6 +129,8 @@ def curate_npz_paths(
     observations_out: list[np.ndarray] = []
     policies_out: list[np.ndarray] = []
     values_out: list[np.ndarray] = []
+    counts_out: list[np.ndarray] = []
+    source_masks_out: list[np.ndarray] = []
     sources: list[dict[str, Any]] = []
     total_in = 0
     total_out = 0
@@ -138,6 +152,10 @@ def curate_npz_paths(
             observations = np.asarray(data["observations"], dtype=np.float32)
             policies = np.asarray(data["policies"], dtype=np.float32)
             values = np.asarray(data["values"], dtype=np.float32)
+            if "counts" in data.files:
+                counts = np.asarray(data["counts"], dtype=np.float32)
+            else:
+                counts = np.zeros(len(values), dtype=np.float32)
         except (OSError, KeyError, ValueError):
             source_report["discard_reasons"] = {"load_error": 1}
             sources.append(source_report)
@@ -170,9 +188,13 @@ def curate_npz_paths(
                 factor = max(factor, int(human_oversample))
             kept_policies = policies[:n][valid]
             kept_policies = kept_policies / np.sum(kept_policies, axis=1, keepdims=True)
+            kept_counts = counts[:n][valid]
+            kept_source_mask = np.full(int(kept), bool(is_human), dtype=bool)
             observations_out.extend([observations[:n][valid]] * factor)
             policies_out.extend([kept_policies] * factor)
             values_out.extend([values[:n][valid]] * factor)
+            counts_out.extend([kept_counts] * factor)
+            source_masks_out.extend([kept_source_mask] * factor)
             source_report["human"] = is_human
             source_report["oversample_factor"] = factor
             source_report["kept_examples"] = kept * factor
@@ -184,6 +206,8 @@ def curate_npz_paths(
         observations_final = np.concatenate(observations_out).astype(np.float32, copy=False)
         policies_final = np.concatenate(policies_out).astype(np.float32, copy=False)
         values_final = np.concatenate(values_out).astype(np.float32, copy=False)
+        counts_final = np.concatenate(counts_out).astype(np.float32, copy=False)
+        source_masks_final = np.concatenate(source_masks_out).astype(bool, copy=False)
     else:
         observations_final = np.zeros(
             (0, OBSERVATION_CHANNELS, BOARD_SIZE, BOARD_SIZE),
@@ -191,6 +215,8 @@ def curate_npz_paths(
         )
         policies_final = np.zeros((0, ACTION_SPACE.num_actions), dtype=np.float32)
         values_final = np.zeros((0,), dtype=np.float32)
+        counts_final = np.zeros((0,), dtype=np.float32)
+        source_masks_final = np.zeros((0,), dtype=bool)
 
     report = {
         "input_examples": total_in,
@@ -201,7 +227,14 @@ def curate_npz_paths(
     }
     if total_out != len(values_final):
         report["kept_examples"] = len(values_final)
-    return CuratedDataset(observations_final, policies_final, values_final, cast(dict[str, Any], report))
+    return CuratedDataset(
+        observations=observations_final,
+        policies=policies_final,
+        values=values_final,
+        report=cast(dict[str, Any], report),
+        source_masks=source_masks_final,
+        counts=counts_final,
+    )
 
 
 def save_curated_dataset(dataset: CuratedDataset, output_path: Path) -> Path:
@@ -211,6 +244,8 @@ def save_curated_dataset(dataset: CuratedDataset, output_path: Path) -> Path:
         observations=dataset.observations,
         policies=dataset.policies,
         values=dataset.values,
+        counts=dataset.counts,
+        source_masks=dataset.source_masks.astype(np.uint8, copy=False),
     )
     report_path = output_path.with_suffix(".report.json")
     report_path.write_text(json.dumps(dataset.report, indent=2), encoding="utf-8")

@@ -76,6 +76,8 @@ def generate_imitation_data(
                 game_history=game_history,
                 winner=winner,
                 forced_draw=board.is_forced_draw(),
+                final_p1_count=int(board.p1_count),
+                final_p2_count=int(board.p2_count),
             ),
         )
 

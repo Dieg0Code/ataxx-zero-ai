@@ -1,0 +1,37 @@
+{
+  "mode": "play",
+  "player_ai": "model",
+  "starter": "ai",
+  "mcts_sims": 400,
+  "tournament_id": null,
+  "player_human": "human",
+  "round_idx": null,
+  "match_idx": null,
+  "is_tiebreak": false,
+  "p1_label": "model",
+  "p2_label": "human",
+  "n_moves": 74,
+  "winner": -1,
+  "forced_draw": false,
+  "value_dtype": "float32",
+  "shapes": {
+    "observations": [
+      74,
+      11,
+      7,
+      7
+    ],
+    "policies": [
+      74,
+      793
+    ],
+    "values": [
+      74
+    ],
+    "counts": [
+      74
+    ]
+  },
+  "final_p1_count": 13,
+  "final_p2_count": 36
+}

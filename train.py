@@ -52,6 +52,7 @@ from training.loop_runtime import (  # noqa: E402
     build_train_loader,
     build_val_loader,
     fit_with_ddp_fallback,
+    load_human_replay_buffer,
     prepare_train_val_examples,
     resolve_eval_levels,
     restore_system_from_checkpoint,
@@ -99,16 +100,13 @@ def main() -> None:
     iterations = cfg_int("iterations")
     epochs = cfg_int("epochs")
     system = AtaxxZero(
-        learning_rate=cfg_float("learning_rate"),
-        weight_decay=cfg_float("weight_decay"),
-        value_loss_coeff=cfg_float("value_loss_coeff"),
-        d_model=cfg_int("d_model"),
-        nhead=cfg_int("nhead"),
-        num_layers=cfg_int("num_layers"),
-        dim_feedforward=cfg_int("dim_feedforward"),
-        dropout=cfg_float("dropout"),
-        scheduler_type="cosine",
-        max_epochs=iterations * epochs,
+        learning_rate=cfg_float("learning_rate"), weight_decay=cfg_float("weight_decay"),
+        value_loss_coeff=cfg_float("value_loss_coeff"), count_loss_coeff=cfg_float("count_loss_coeff"),
+        d_model=cfg_int("d_model"), nhead=cfg_int("nhead"), num_layers=cfg_int("num_layers"),
+        dim_feedforward=cfg_int("dim_feedforward"), dropout=cfg_float("dropout"),
+        value_head_depth=cfg_int("value_head_depth"), count_head_enabled=cfg_bool("count_head_enabled"),
+        symmetry_augmentation=cfg_bool("symmetry_augmentation"),
+        scheduler_type="cosine", max_epochs=iterations * epochs,
     )
     if device == "cuda" and cfg_bool("compile_model"):
         try:
@@ -161,22 +159,16 @@ def main() -> None:
         pulse_every=cfg_int("epoch_pulse_every"),
     )
 
-    trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision = (
-        run_curated_pretrain_if_needed(
-            start_iteration=start_iteration,
-            system=system,
-            trainer_accelerator=trainer_accelerator,
-            trainer_devices=trainer_devices,
-            trainer_strategy=trainer_strategy,
-            trainer_precision=trainer_precision,
-            checkpoint_callback=checkpoint_callback,
-            lr_monitor=lr_monitor,
-            logger=logger,
-            device=device,
-            optimizer_transfer=optimizer_transfer,
-            epoch_pulse=epoch_pulse,
-        )
+    trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision = run_curated_pretrain_if_needed(
+        start_iteration=start_iteration, system=system,
+        trainer_accelerator=trainer_accelerator, trainer_devices=trainer_devices,
+        trainer_strategy=trainer_strategy, trainer_precision=trainer_precision,
+        checkpoint_callback=checkpoint_callback, lr_monitor=lr_monitor,
+        logger=logger, device=device,
+        optimizer_transfer=optimizer_transfer, epoch_pulse=epoch_pulse,
     )
+    human_replay_examples, human_batch_fraction = load_human_replay_buffer()
+
     trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision = run_warmup_if_needed(
         start_iteration=start_iteration,
         system=system,
@@ -215,6 +207,8 @@ def main() -> None:
             train_examples, val_examples = prepare_train_val_examples(
                 buffer=buffer,
                 split_seed=cfg_int("seed") + iteration,
+                human_examples=human_replay_examples or None,
+                human_fraction=human_batch_fraction,
             )
             train_loader = build_train_loader(train_examples, device=device)
             val_loader = build_val_loader(val_examples, device=device)

@@ -73,9 +73,37 @@ def validate_absolute_eval_gate_config(
         raise ValueError("CONFIG['eval_absolute_abort_mode'] must be any, both, or h2h.")
 
 
+def validate_v11_pipeline_config(
+    *,
+    cfg_bool: Callable[[str], bool],
+    cfg_float: Callable[[str], float],
+    cfg_str: Callable[[str], str],
+) -> None:
+    """Valida combinaciones v11 (human replay, value mask, symmetry, count head)."""
+    fraction = cfg_float("human_batch_fraction")
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError("CONFIG['human_batch_fraction'] must be in [0, 1].")
+    if fraction > 0.0 and cfg_str("human_replay_path").strip() == "":
+        raise ValueError(
+            "human_batch_fraction > 0 requires human_replay_path to be set.",
+        )
+    if cfg_bool("human_value_mask") and fraction == 0.0:
+        raise ValueError(
+            "human_value_mask=True is meaningless without human_batch_fraction > 0.",
+        )
+    count_coeff = cfg_float("count_loss_coeff")
+    if count_coeff < 0.0:
+        raise ValueError("CONFIG['count_loss_coeff'] must be >= 0.")
+    if count_coeff > 0.0 and not cfg_bool("count_head_enabled"):
+        raise ValueError(
+            "count_loss_coeff > 0 requires count_head_enabled=True.",
+        )
+
+
 __all__ = [
     "validate_absolute_eval_gate_config",
     "validate_bootstrap_warmup_config",
     "validate_reward_shaping_config",
     "validate_supported_heuristic_csv",
+    "validate_v11_pipeline_config",
 ]

@@ -75,6 +75,8 @@ def history_to_examples(
     *,
     winner: int,
     forced_draw: bool = False,
+    final_p1_count: int | None = None,
+    final_p2_count: int | None = None,
 ) -> list[TrainingExample]:
     if len(game_history) == 0:
         return []
@@ -84,6 +86,13 @@ def history_to_examples(
     next_player: int | None = None
     shaping_scale = cfg_float("reward_shaping_scale") if cfg_bool("reward_shaping_enabled") else 0.0
     gamma = cfg_float("reward_shaping_gamma")
+
+    # count_diff: diferencia absoluta de piezas finales, signada por la
+    # perspectiva del jugador que mueve. Si no hay counts conocidos,
+    # se setea a 0.0 (count head se desactiva o aprende ruido).
+    final_diff_p1: float = 0.0
+    if final_p1_count is not None and final_p2_count is not None:
+        final_diff_p1 = float(int(final_p1_count) - int(final_p2_count))
 
     # Stored turns may belong to the same side repeatedly (model vs heuristic) or alternate
     # (self-play). We preserve perspective by only flipping the future suffix when control
@@ -102,7 +111,11 @@ def history_to_examples(
             forced_draw=forced_draw,
         )
         target = float(np.clip(z + (shaping_scale * future_shaping), -1.0, 1.0))
-        examples_reversed.append((observation, policy, target))
+        count_diff = final_diff_p1 if player_at_turn == 1 else -final_diff_p1
+        # is_human_flag=0.0 por default (self-play/heuristica). Los loaders
+        # de replays humanos sobreescriben el flag a 1.0 antes de meterlos
+        # al human_buffer.
+        examples_reversed.append((observation, policy, target, count_diff, 0.0))
 
     examples_reversed.reverse()
     return examples_reversed
