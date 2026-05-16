@@ -254,6 +254,8 @@ def build_sequential_checkpoint_mcts_pool(
             d_model=int(spec.model_cfg["d_model"]),
             nhead=int(spec.model_cfg["nhead"]),
             num_layers=int(spec.model_cfg["num_layers"]),
+            value_head_depth=int(spec.model_cfg.get("value_head_depth", 1)),
+            count_head_enabled=bool(spec.model_cfg.get("count_head_enabled", 0.0)),
             dim_feedforward=int(spec.model_cfg["dim_feedforward"]),
             dropout=float(spec.model_cfg["dropout"]),
         )
@@ -290,6 +292,8 @@ def init_selfplay_process_worker(
         num_layers=int(model_cfg["num_layers"]),
         dim_feedforward=int(model_cfg["dim_feedforward"]),
         dropout=float(model_cfg["dropout"]),
+        value_head_depth=int(model_cfg.get("value_head_depth", 1)),
+        count_head_enabled=bool(model_cfg.get("count_head_enabled", 0.0)),
     )
     model.load_state_dict(model_state_dict)
     model.eval()
@@ -312,6 +316,8 @@ def init_selfplay_process_worker(
             num_layers=int(opponent_cfg["num_layers"]),
             dim_feedforward=int(opponent_cfg["dim_feedforward"]),
             dropout=float(opponent_cfg["dropout"]),
+            value_head_depth=int(opponent_cfg.get("value_head_depth", 1)),
+            count_head_enabled=bool(opponent_cfg.get("count_head_enabled", 0.0)),
         )
         opponent_model.load_state_dict(opponent_state_dict)
         opponent_model.eval()

@@ -167,6 +167,8 @@ def _run_parallel_selfplay(
         "num_layers": cfg_int("num_layers"),
         "dim_feedforward": cfg_int("dim_feedforward"),
         "dropout": cfg_float("dropout"),
+        "value_head_depth": cfg_int("value_head_depth"),
+        "count_head_enabled": float(cfg_bool("count_head_enabled")),
     }
     serialized_opponent_specs = {
         participant_id: (spec.state_dict, spec.model_cfg)
