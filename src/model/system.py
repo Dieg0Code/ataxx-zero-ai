@@ -9,7 +9,7 @@ from pytorch_lightning.utilities.types import OptimizerLRScheduler
 from torch import optim
 
 from game.actions import ACTION_SPACE
-from game.constants import OBSERVATION_CHANNELS
+from game.constants import BOARD_SIZE, OBSERVATION_CHANNELS
 from model.transformer import AtaxxTransformerNet
 
 
@@ -169,8 +169,14 @@ class AtaxxZero(pl.LightningModule):
         log_probs = functional.log_softmax(pi_logits, dim=1)
         loss_pi = -torch.sum(target_pis * log_probs) / target_pis.size(0)
 
+        # Normalizamos el target de count a [-1, 1] dividiendo por el maximo
+        # del tablero (49 celdas). Sin normalizar, count_diff vive en
+        # ~[-30, +30] y MSE inicial ~130 contra value MSE ~1: el gradiente del
+        # count head domina el backbone compartido y aborta el aprendizaje
+        # de policy/value (PM v11 iter 19 confirmo el sintoma).
         if self.count_loss_coeff > 0.0 and target_counts is not None:
-            loss_count = functional.mse_loss(count_pred.view(-1), target_counts.view(-1))
+            target_counts_norm = target_counts.view(-1) / float(BOARD_SIZE * BOARD_SIZE)
+            loss_count = functional.mse_loss(count_pred.view(-1), target_counts_norm)
         else:
             loss_count = torch.tensor(0.0, device=v_pred.device, dtype=v_pred.dtype)
 

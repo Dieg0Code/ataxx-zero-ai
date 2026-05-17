@@ -265,7 +265,11 @@ class TestTrainingStepNumerics(unittest.TestCase):
                 (boards, target_pis, target_vs, target_counts, None),
             )
 
-        expected_count = functional.mse_loss(c_pred.view(-1), target_counts.view(-1))
+        # count target se normaliza por 49 (BOARD_SIZE**2) en system._common_step
+        # para que la escala matchee el value loss y no canibalice el backbone.
+        expected_count = functional.mse_loss(
+            c_pred.view(-1), target_counts.view(-1) / 49.0,
+        )
         self.assertTrue(torch.isclose(metrics["loss_count"], expected_count))
 
 
