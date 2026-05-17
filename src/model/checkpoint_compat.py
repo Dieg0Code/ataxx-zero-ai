@@ -14,6 +14,8 @@ _MODEL_KWARG_KEYS = {
     "num_layers",
     "dim_feedforward",
     "dropout",
+    "value_head_depth",
+    "count_head_enabled",
 }
 _INPUT_PROJ_KEYS = ("input_proj.weight", "model.input_proj.weight")
 
