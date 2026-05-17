@@ -16,6 +16,7 @@ checkpoints/*
 !checkpoints/registered/
 checkpoints/registered/*
 !checkpoints/registered/*.pt
+!checkpoints/league_ratings.json
 logs/
 runs_history/
 hf_checkpoints/

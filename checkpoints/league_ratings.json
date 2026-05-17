@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-17T01:30:00+00:00",
+  "champion_id": "ckpt:paralelo",
+  "entries": {
+    "ckpt:paralelo": {
+      "participant_id": "ckpt:paralelo",
+      "display_name": "paralelo",
+      "kind": "checkpoint",
+      "rating": 1350.0,
+      "games_played": 8,
+      "artifact_path": "checkpoints/registered/paralelo.pt"
+    },
+    "ckpt:liga": {
+      "participant_id": "ckpt:liga",
+      "display_name": "liga",
+      "kind": "checkpoint",
+      "rating": 1320.0,
+      "games_played": 8,
+      "artifact_path": "checkpoints/registered/liga.pt"
+    },
+    "ckpt:espejismo": {
+      "participant_id": "ckpt:espejismo",
+      "display_name": "espejismo",
+      "kind": "checkpoint",
+      "rating": 1310.0,
+      "games_played": 8,
+      "artifact_path": "checkpoints/registered/espejismo.pt"
+    },
+    "ckpt:amnesia": {
+      "participant_id": "ckpt:amnesia",
+      "display_name": "amnesia",
+      "kind": "checkpoint",
+      "rating": 1280.0,
+      "games_played": 8,
+      "artifact_path": "checkpoints/registered/amnesia.pt"
+    },
+    "ckpt:centinela": {
+      "participant_id": "ckpt:centinela",
+      "display_name": "centinela",
+      "kind": "checkpoint",
+      "rating": 1240.0,
+      "games_played": 8,
+      "artifact_path": "checkpoints/registered/centinela.pt"
+    }
+  },
+  "recent_series": []
+}
