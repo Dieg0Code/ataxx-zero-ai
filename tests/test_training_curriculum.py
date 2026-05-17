@@ -10,7 +10,7 @@ from training.curriculum import get_curriculum_mix, sample_opponent_from_curricu
 
 class TestTrainingCurriculum(unittest.TestCase):
     def test_mix_probabilities_sum_to_one_per_group(self) -> None:
-        for iteration in (1, 6, 13, 25):
+        for iteration in (1, 6, 13, 25, 45, 75, 120):
             mix = get_curriculum_mix(iteration)
             self.assertAlmostEqual(mix["self"] + mix["heuristic"] + mix["random"], 1.0, places=6)
             self.assertAlmostEqual(
@@ -23,6 +23,12 @@ class TestTrainingCurriculum(unittest.TestCase):
                 1.0,
                 places=6,
             )
+
+    def test_late_phases_keep_easy_and_normal_above_zero(self) -> None:
+        for iteration in (45, 75, 120):
+            mix = get_curriculum_mix(iteration)
+            self.assertGreaterEqual(mix["heu_easy"], 0.05)
+            self.assertGreaterEqual(mix["heu_normal"], 0.10)
 
     def test_curriculum_progressively_increases_self_play(self) -> None:
         early = get_curriculum_mix(1)["self"]
