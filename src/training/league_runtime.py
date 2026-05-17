@@ -23,6 +23,10 @@ ALLOWED_MODEL_HPARAMS = {
     "dim_feedforward",
     "dropout",
 }
+OPTIONAL_MODEL_HPARAMS_DEFAULTS: dict[str, int | float] = {
+    "value_head_depth": 1,
+    "count_head_enabled": 0.0,
+}
 
 
 @dataclass(frozen=True)
@@ -78,21 +82,31 @@ def _extract_model_cfg(payload: dict[str, Any]) -> dict[str, int | float]:
     if not isinstance(raw_hparams, dict):
         raw_hparams = {}
 
-    extracted = {
+    extracted: dict[str, int | float] = {
         key: raw_hparams[key]
         for key in ALLOWED_MODEL_HPARAMS
         if key in raw_hparams
     }
-    if len(extracted) == len(ALLOWED_MODEL_HPARAMS):
-        return extracted
-
-    return {
-        "d_model": cfg_int("d_model"),
-        "nhead": cfg_int("nhead"),
-        "num_layers": cfg_int("num_layers"),
-        "dim_feedforward": cfg_int("dim_feedforward"),
-        "dropout": cfg_float("dropout"),
-    }
+    if len(extracted) != len(ALLOWED_MODEL_HPARAMS):
+        extracted = {
+            "d_model": cfg_int("d_model"),
+            "nhead": cfg_int("nhead"),
+            "num_layers": cfg_int("num_layers"),
+            "dim_feedforward": cfg_int("dim_feedforward"),
+            "dropout": cfg_float("dropout"),
+        }
+    for key, default in OPTIONAL_MODEL_HPARAMS_DEFAULTS.items():
+        if key in raw_hparams:
+            value = raw_hparams[key]
+            if isinstance(value, bool):
+                extracted[key] = float(value)
+            elif isinstance(value, (int, float)):
+                extracted[key] = value
+            else:
+                extracted[key] = default
+        else:
+            extracted[key] = default
+    return extracted
 
 
 def load_checkpoint_model_spec(entry: CheckpointPoolEntry) -> CheckpointModelSpec:
