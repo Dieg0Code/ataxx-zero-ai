@@ -32,9 +32,26 @@ CSV_COLUMNS = [
     "eval_total_wins",
     "eval_total_losses",
     "eval_total_draws",
+    "eval_score_easy",
+    "eval_score_normal",
     "eval_score_hard",
     "eval_score_apex",
+    "eval_score_gambit",
     "eval_score_sentinel",
+    "baseline_checkpoint",
+    "baseline_h2h_score",
+    "baseline_h2h_wins",
+    "baseline_h2h_losses",
+    "baseline_h2h_draws",
+    "baseline_h2h_games",
+    "absolute_fail_count",
+    "h2h_fail_count",
+    "champion_duel_opponent",
+    "champion_duel_score",
+    "champion_duel_wins",
+    "champion_duel_losses",
+    "champion_duel_draws",
+    "champion_duel_games",
     "train_loss_total",
     "train_loss_value",
     "train_loss_policy",
@@ -87,25 +104,9 @@ def download_metadata_files(
 def flatten_metadata(path: Path) -> dict[str, object]:
     data = json.loads(path.read_text(encoding="utf-8"))
     stats = data.get("stats", {}) or {}
-    row: dict[str, object] = {
-        "iter": data.get("iteration"),
-        "timestamp": data.get("timestamp"),
-        "replay_size": stats.get("replay_size"),
-        "score": stats.get("score"),
-        "best_eval_score": stats.get("best_eval_score"),
-        "eval_total_wins": stats.get("eval_total_wins"),
-        "eval_total_losses": stats.get("eval_total_losses"),
-        "eval_total_draws": stats.get("eval_total_draws"),
-        "eval_score_hard": stats.get("eval_score_hard"),
-        "eval_score_apex": stats.get("eval_score_apex"),
-        "eval_score_sentinel": stats.get("eval_score_sentinel"),
-        "train_loss_total": stats.get("train_loss_total"),
-        "train_loss_value": stats.get("train_loss_value"),
-        "train_loss_policy": stats.get("train_loss_policy"),
-        "train_value_mae": stats.get("train_value_mae"),
-        "train_policy_accuracy": stats.get("train_policy_accuracy"),
-        "train_lr": stats.get("train_lr"),
-    }
+    row: dict[str, object] = {col: stats.get(col) for col in CSV_COLUMNS}
+    row["iter"] = data.get("iteration")
+    row["timestamp"] = data.get("timestamp")
     return row
 
 

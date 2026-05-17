@@ -403,14 +403,20 @@ def main() -> None:
                                 seed=cfg_int("seed") + 200_000 + iteration,
                             ),
                         )
+                        duel = champion_series_summary
+                        duel_score = float(duel["checkpoint_a_score"])
+                        opponent_name = champion_entry.display_name
                         monitor.log_warning(
                             iteration=iteration,
-                            message=(
-                                "league champion duel "
-                                f"score={float(champion_series_summary['checkpoint_a_score']):.3f} "
-                                f"vs {champion_entry.display_name}"
-                            ),
+                            message=f"league champion duel score={duel_score:.3f} vs {opponent_name}",
                         )
+                        if eval_stats is not None:
+                            eval_stats.update({"champion_duel_opponent": opponent_name,
+                                "champion_duel_score": duel_score,
+                                "champion_duel_wins": int(duel["checkpoint_a_wins"]),
+                                "champion_duel_losses": int(duel["checkpoint_b_wins"]),
+                                "champion_duel_draws": int(duel["draws"]),
+                                "champion_duel_games": cfg_int("league_champion_games")})
                     updated_league = record_checkpoint_in_league(
                         checkpoint_path=manual_ckpt,
                         heuristic_series_by_level=eval_level_summaries,
