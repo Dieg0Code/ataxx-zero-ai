@@ -363,7 +363,98 @@ término en un mensaje pasado sin contexto.
 
 ---
 
-## 8. Específicos de este repo
+## 8. Estadística y muestreo
+
+Cuando comparamos modelos jugando N partidas, los resultados tienen
+**incertidumbre**. Estos términos cuantifican esa incertidumbre.
+
+**n / N (tamaño de muestra)** — Cuántas observaciones tenés. Si comparás
+dos modelos con 24 partidas, n=24. Más alto = más confianza en la medición.
+
+**Media / mean / promedio** — Suma dividida por n. Si asedio ganó 11 de 24
+partidas, la media de "wins" es 11/24 = 0.458. Es lo que típicamente
+reportamos como "score" o "h2h score".
+
+**Mediana** — El valor del medio cuando ordenás los datos. Menos sensible
+a outliers que la media. No la usamos mucho acá.
+
+**Desviación estándar (std)** — Qué tan dispersos están los datos
+alrededor de la media. Alta std = datos muy variables. Baja std = datos
+concentrados.
+
+**Varianza** — La std al cuadrado. Misma idea, en otras unidades.
+
+**Outlier / valor atípico** — Un dato que se aleja mucho del resto. Pueden
+ser errores de medición o eventos raros reales.
+
+**Distribución** — Cómo se reparten los valores posibles. La **distribución
+normal** (campana de Gauss) aparece en muchos lados. La **distribución
+binomial** describe "cuántos éxitos en N intentos" (justo lo que pasa
+cuando contás wins en N partidas).
+
+**Ruido de muestreo (sampling noise)** — La variabilidad natural que
+aparece porque mediste con n finito en lugar del "verdadero" valor
+poblacional. Cuanto más chico n, más ruido. Por eso h2h con 24 partidas
+es más ruidoso que h2h con 64.
+
+**Error estándar (SE / standard error)** — Cuánto esperaríamos que varíe
+nuestra medición de la media si repitiéramos el experimento. Para una
+proporción (como h2h score), `SE ≈ sqrt(p(1-p)/n)`. Con p=0.5 y n=24,
+SE ≈ 0.10.
+
+**Intervalo de confianza (IC, CI)** — Rango de valores plausibles para
+el "verdadero" parámetro, dado lo que medimos. **IC95%** = "estoy 95%
+seguro de que el verdadero valor está en este rango". Para proporciones,
+una aproximación rápida es `media ± 1.96 × SE`. Con media=0.458 y SE≈0.10
+el IC95% es aprox `[0.26, 0.66]` — bastante ancho.
+
+**IC99%, IC90%** — Mismo concepto, más/menos estricto. IC99% es más ancho
+(más seguridad → más rango). IC90% es más angosto (menos seguridad).
+
+**Margen de error** — La mitad del ancho del IC. Si IC95% va de 0.26 a
+0.66, el margen de error es ±0.20.
+
+**Regla práctica**: para n partidas con outcome binario (win/loss),
+margen de error a 95% es aprox **1/sqrt(n)**. Con n=24, ~0.20. Con n=64,
+~0.125. Con n=100, ~0.10. Con n=400, ~0.05. Por eso el composite usa
+64×6=384 partidas.
+
+**Significancia estadística** — Cuando la diferencia entre dos mediciones
+es lo bastante grande como para no ser explicable solo por ruido. Si
+asedio mide 0.42 vs liga 0.50 con n=24 cada uno, NO es significativo
+(los IC se superponen). Con n=400 sí lo sería.
+
+**p-value (valor p)** — Probabilidad de ver una diferencia tan grande como
+la observada SI no hubiera diferencia real. p<0.05 es la convención típica
+de "significativo". No es la probabilidad de que tu hipótesis sea cierta
+— es la probabilidad de los datos dado que no hay efecto.
+
+**Correlación** — Qué tan relacionadas están dos variables. Coeficiente
+en [-1, +1]. +1 = se mueven juntas, -1 = una sube cuando la otra baja,
+0 = sin relación lineal. "Correlación no implica causación".
+
+**Monotónico** — Una secuencia que solo sube (monotónicamente creciente)
+o solo baja (monotónicamente decreciente). El composite de asedio 0.165
+→ 0.178 → 0.236 es monotónicamente creciente. Si tuviera un valle en el
+medio, no lo sería.
+
+**Bootstrap (estadístico)** — Distinto del bootstrap de ML. Técnica para
+estimar IC: resampleás con reemplazo del dataset original muchas veces y
+mirás cómo varía tu métrica. No lo usamos explícitamente acá.
+
+**Trade-off n vs costo** — Más partidas = menos ruido, más tiempo de
+GPU. La eval oficial v11 usa n=64 vs 6 niveles = 384 partidas. La mía
+ad-hoc fue n=24 — 2.6× más rápida pero ~1.6× más ruidosa.
+
+**Ejemplo concreto del proyecto**: cuando comparé asedio iter 30 vs liga
+con n=24 obtuve 3/21 = 0.125 h2h. El IC95% de eso es aprox `[0.027, 0.32]`
+(margen de error grande con n chico). El "verdadero" valor probablemente
+está cerca de 0.42 (que medimos con n=64 oficial). El 0.125 era ruido,
+no una caída real.
+
+---
+
+## 9. Específicos de este repo
 
 **Codename / generación** — Apodo que cada modelo recibe después de
 entrenado, capturando lo que pasó en el run. bogo, reflejo, chispazo,
@@ -397,7 +488,7 @@ balancear el batch.
 
 ---
 
-## 9. Términos de Kaggle / infraestructura
+## 10. Términos de Kaggle / infraestructura
 
 **Kaggle kernel** — Notebook que corre en GPU gratis (12h/sesión).
 Este repo usa Kaggle para training porque T4×2 es suficiente.
@@ -427,7 +518,7 @@ de push.
 
 ---
 
-## 10. Mini-glosario de jerga conversacional
+## 11. Mini-glosario de jerga conversacional
 
 **"El modelo canibaliza"** — Un componente del modelo (head auxiliar)
 domina los gradientes y le roba capacidad a los componentes principales.
