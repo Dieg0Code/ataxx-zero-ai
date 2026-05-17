@@ -12,7 +12,10 @@ wheels/
 .env.local
 .env.*.local
 
-checkpoints/
+checkpoints/*
+!checkpoints/registered/
+checkpoints/registered/*
+!checkpoints/registered/*.pt
 logs/
 runs_history/
 hf_checkpoints/

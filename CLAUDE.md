@@ -153,6 +153,7 @@ Apodos asignados después del run, no antes — el nombre captura lo que pasó. 
 ## Reglas no-obvias
 
 - **`checkpoints/`, `runs_history/`, `hf_checkpoints/`, `kaggle_logs/`, `.claude/` están gitignored.** Los checkpoints y CSVs viven solo localmente o en HF Hub. El `registry.json` también es gitignored (no commitearlo).
+- **Excepción**: `checkpoints/registered/*.pt` SÍ se trackea en git. La política es commitear el mejor checkpoint de cada generación (un archivo por codename, naming `<codename>.pt`) para preservar el historial jugable en el repo sin depender de HF. Solo válido mientras cada archivo sea <100MB (límite GitHub). El campo `file` en `registry.json` puede apuntar a `registered/<codename>.pt` para que `resolve()` lo encuentre directo desde clone.
 - **El notebook `Ataxx_Zero_Kaggle.ipynb` se sube a Kaggle via `kaggle kernels push -p .`** (CLI separada de git). El notebook clona el repo en Kaggle desde GitHub — por eso pushear código antes de correr es obligatorio.
 - **El validador de bootstrap** (`config_validation_runtime.validate_bootstrap_warmup_config`) bloquea `hf_reset_iteration=true + warmup_games=0`. Si querés bootstrap canónico: `reset_iteration=True + warmup_games>=320`.
 - **Auto-memory en `.claude/projects/.../memory/`** — preferencias y feedback del usuario persisten entre sesiones. Diego prefiere español neutro en docs.
