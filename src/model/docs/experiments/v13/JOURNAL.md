@@ -398,3 +398,113 @@ inteligencia es más certeza, no más verdad. Con calibración,
 más inteligencia es más capacidad de actuar bajo incertidumbre
 sin colapsar en certeza prematura — que es, posiblemente, la
 definición operacional de sabiduría.
+
+## 2026-05-24 ~06:30 UTC — [ABORT] criterio de falsación cumplido a iter 14
+
+Diego pauseó el run en Kaggle. Se cumplió el criterio de aborto
+temprano de PROPOSAL.md ("iter 30 con train/loss > 2.8 sostenido
+→ el modelo grande no está aprendiendo"). Lo cumplimos antes de
+iter 30 con dirección monotónica equivocada — no esperamos.
+
+### Datos observados (snapshot iter 14, ~2h de compute)
+
+Eval composite (heurísticas):
+- iter 6: easy=0.016, apex=0.008, resto 0.0 → composite ≈ 0.004
+- iter 12: todos los niveles **0.000** → composite = 0.0
+- `baseline_h2h_score`: NaN (gate no corre hasta iter 150)
+
+Wandb training/val (más informativo que eval):
+| step | train/loss | policy_acc | value_mae | val/loss |
+|---|---|---|---|---|
+| 2 (post-pretrain) | 3.96 | 4.9% | 1.00 | 3.61 |
+| 20 | 4.84 | 3.7% | 0.98 | 4.73 |
+| 38 | 4.83 | 4.0% | 0.99 | 4.79 |
+| 53 | 4.85 | 3.3% | 1.00 | 4.91 |
+
+Replay creció normal (124 → 4519). MCTS y self-play loop funcionan
+infraestructuralmente. El pipeline no está roto — el modelo sí.
+
+### Por qué se aborta
+
+- `train/loss` subió de 3.96 (post-pretrain) a 4.85 (después de 50
+  optimizer steps). Dirección equivocada y consistente — no es
+  spike puntual.
+- `policy_accuracy ≈ 5%` es literalmente random sobre el espacio
+  de acciones legales típico (~20 movidas → 1/20 = 5%).
+- `value_mae ≈ 1.0` con target en [-1, 1] es worst-case: predicción
+  esencialmente uninformative.
+- `val/loss` también monotónicamente creciente: 3.61 → 4.91.
+
+El pretrain humano sí dio una inicialización razonable (loss
+post-pretrain ~3.6-3.96 es coherente con v12). El self-play
+posterior **borra** esa inicialización en lugar de refinarla.
+
+### Hipótesis ordenadas por probabilidad
+
+1. **Learning rate 3e-4 es demasiado alto para arch 384/12L.** Los
+   pesos pretrain valiosos se sobrescriben con updates agresivos.
+   AlphaZero canon usó schedule 0.2→0.0002 con SGD; AdamW constante
+   con 3.5× los parámetros es ingenuamente equivalente, en la
+   práctica probablemente inestable.
+2. **Value targets ruidosos amplificados por 800 sims.** Cuando el
+   modelo es random, todos los juegos terminan en outcomes
+   semi-random, y los value targets que se aprenden son ruido. Con
+   value head más profundo (depth=2) más el `count_head`, el
+   gradiente del lado value puede dominar al del policy.
+3. **Combinación arch nueva + pure self-play + league no madura.**
+   El bootstrap depende mucho de la league (umbral, paralelo, liga)
+   pero esos checkpoints son arch 192/8L. Cuando se cargan en arch
+   384/12L vía `adapt_state_dict_observation_channels`, puede que
+   los pesos extras queden con init random — efectivamente
+   league = policy aleatoria + 30% pesos coherentes. Si esto pasa,
+   no estamos haciendo league bootstrap, estamos jugando contra
+   ruido aumentado.
+
+### Próximos pasos (no implementar ahora — pensar primero)
+
+Diego decidirá en próxima sesión cómo proceder. Opciones a evaluar:
+
+- **A. Patch mínimo y relanzar v13** (mismo nombre, sobrescribir HF):
+  bajar `learning_rate` 3e-4 → 1e-4, `pretrain_epochs` 3 → 8, agregar
+  LR warmup cosine. No tocar arch ni curriculum.
+- **B. Verificar primero la hipótesis 3** (compatibilidad league).
+  Hacer test local: cargar liga.pt (arch 192/8L) en arch 384/12L y
+  medir si la inferencia produce policy útil o random. Si es random,
+  league no está aportando nada en v13 y hay que decidir: o
+  ablation de arch a 256/10L (compatible con league pesos via
+  adapter) o aceptar bootstrap sin league.
+- **C. Aceptar que la combinación 8-cambios-simultáneos es
+  imposible de diagnosticar.** Hacer v13.1 con SOLO pure self-play
+  (volver arch 192/8L, mcts_sims 320, c_puct 1.5). Si funciona,
+  agregar cambios uno a uno en v13.2, v13.3.
+
+La opción C es lo que el método científico recomienda. Las opciones
+A y B son atajos que pueden ahorrar tiempo si la hipótesis correcta
+es 1 o 3 — pero si la causa es otra (4ª hipótesis no pensada), nos
+quedaríamos sin saber por qué falló.
+
+### Estado del run
+
+- Kaggle: pauseado por Diego.
+- HF Hub: 14 metadata files + checkpoints subidos en
+  `runs/policy_spatial_v13/`. Si relanzamos con mismo `hf_run_id`,
+  va a hacer resume desde iter 14 — **mal idea** si queremos
+  cambiar hparams. Si vamos por A/B/C, usar `hf_run_id` distinto
+  (v13_1 o similar).
+- wandb: run `oergx3d2` marcado como running. Cerrar manualmente
+  o dejar que expire por inactividad.
+
+### Lección de proceso (anclar para próximos experimentos)
+
+Esto es exactamente lo que el PROPOSAL.md fue diseñado para
+capturar. Sin pre-registration habríamos:
+- Dejado correr el run "a ver si mejora" varias horas más.
+- Inventado narrativa post-hoc sobre por qué el resultado era
+  esperable o no concluyente.
+- Perdido la oportunidad de identificar el patrón de "train/loss
+  creciente con direction monotónica" como señal de aborto fuerte.
+
+Con pre-registration: criterio acordado de antemano + observación
+del dato → decisión técnica clara en minutos, sin debate
+emocional ni hundir más compute. El postmortem viene después si
+v13 muere; el JOURNAL captura el momento.
