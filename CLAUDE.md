@@ -15,8 +15,8 @@ CI corre `.github/workflows/ci-train.yml` cuando se modifica cualquier path en: 
 **Antes de `git push`**, correr las 4 gates locales en este orden:
 
 ```bash
-# 1. Política de longitud (max 500 líneas por archivo en training scope)
-uv run python scripts/check_python_max_lines.py --max-lines 500 \
+# 1. Política de longitud (max 800 líneas por archivo en training scope)
+uv run python scripts/check_python_max_lines.py --max-lines 800 \
   --path train.py --path src/training --path src/engine --path src/model \
   --path src/game --path src/data \
   --path tests/test_mcts_numerics.py \

@@ -1,48 +1,64 @@
 {
-  "version": 1,
-  "updated_at": "2026-05-17T01:30:00+00:00",
-  "champion_id": "ckpt:paralelo",
+  "champion_id": "ckpt:umbral",
   "entries": {
-    "ckpt:paralelo": {
-      "participant_id": "ckpt:paralelo",
-      "display_name": "paralelo",
-      "kind": "checkpoint",
-      "rating": 1350.0,
-      "games_played": 8,
-      "artifact_path": "checkpoints/registered/paralelo.pt"
-    },
-    "ckpt:liga": {
-      "participant_id": "ckpt:liga",
-      "display_name": "liga",
-      "kind": "checkpoint",
-      "rating": 1320.0,
-      "games_played": 8,
-      "artifact_path": "checkpoints/registered/liga.pt"
-    },
-    "ckpt:espejismo": {
-      "participant_id": "ckpt:espejismo",
-      "display_name": "espejismo",
-      "kind": "checkpoint",
-      "rating": 1310.0,
-      "games_played": 8,
-      "artifact_path": "checkpoints/registered/espejismo.pt"
-    },
     "ckpt:amnesia": {
-      "participant_id": "ckpt:amnesia",
+      "artifact_path": "checkpoints/registered/amnesia.pt",
       "display_name": "amnesia",
-      "kind": "checkpoint",
-      "rating": 1280.0,
       "games_played": 8,
-      "artifact_path": "checkpoints/registered/amnesia.pt"
+      "kind": "checkpoint",
+      "participant_id": "ckpt:amnesia",
+      "rating": 1280.0
     },
     "ckpt:centinela": {
-      "participant_id": "ckpt:centinela",
+      "artifact_path": "checkpoints/registered/centinela.pt",
       "display_name": "centinela",
-      "kind": "checkpoint",
-      "rating": 1240.0,
       "games_played": 8,
-      "artifact_path": "checkpoints/registered/centinela.pt"
+      "kind": "checkpoint",
+      "participant_id": "ckpt:centinela",
+      "rating": 1240.0
+    },
+    "ckpt:espejismo": {
+      "artifact_path": "checkpoints/registered/espejismo.pt",
+      "display_name": "espejismo",
+      "games_played": 8,
+      "kind": "checkpoint",
+      "participant_id": "ckpt:espejismo",
+      "rating": 1310.0
+    },
+    "ckpt:fulcro": {
+      "artifact_path": "checkpoints/registered/fulcro.pt",
+      "display_name": "fulcro",
+      "games_played": 8,
+      "kind": "checkpoint",
+      "participant_id": "ckpt:fulcro",
+      "rating": 1300.0
+    },
+    "ckpt:liga": {
+      "artifact_path": "checkpoints/registered/liga.pt",
+      "display_name": "liga",
+      "games_played": 8,
+      "kind": "checkpoint",
+      "participant_id": "ckpt:liga",
+      "rating": 1320.0
+    },
+    "ckpt:paralelo": {
+      "artifact_path": "checkpoints/registered/paralelo.pt",
+      "display_name": "paralelo",
+      "games_played": 8,
+      "kind": "checkpoint",
+      "participant_id": "ckpt:paralelo",
+      "rating": 1350.0
+    },
+    "ckpt:umbral": {
+      "artifact_path": "checkpoints/registered/umbral.pt",
+      "display_name": "umbral",
+      "games_played": 12,
+      "kind": "checkpoint",
+      "participant_id": "ckpt:umbral",
+      "rating": 1380.0
     }
   },
-  "recent_series": []
+  "recent_series": [],
+  "updated_at": "2026-05-24T03:52:02.120589+00:00",
+  "version": 1
 }

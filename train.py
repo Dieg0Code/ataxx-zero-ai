@@ -268,16 +268,49 @@ def main() -> None:
                         eval_score_losses += int(current_eval["losses"])
                         eval_score_draws += int(current_eval["draws"])
 
+                    level_mean_composite = float(
+                        sum(level_scores.values()) / max(1, len(level_scores)),
+                    )
+                    use_h2h_only = cfg_bool("eval_composite_uses_h2h_only")
+                    gate_min_iteration = cfg_int("eval_absolute_min_iteration")
+                    gate_runs_this_iter = iteration >= gate_min_iteration
+                    pre_gate_stats: dict[str, float | int | str] = {}
+                    pre_gate_failed: bool = False
+                    if use_h2h_only and gate_runs_this_iter:
+                        absolute_gate_ckpt = checkpoint_dir / "_absolute_gate_candidate.ckpt"
+                        trainer.save_checkpoint(str(absolute_gate_ckpt))
+                        try:
+                            absolute_fail_count, h2h_fail_count, pre_gate_stats, pre_gate_failed = (
+                                evaluate_absolute_gate(
+                                    candidate_checkpoint=absolute_gate_ckpt,
+                                    current_composite=level_mean_composite,
+                                    absolute_fail_count=absolute_fail_count,
+                                    h2h_fail_count=h2h_fail_count,
+                                    device=device,
+                                    c_puct=cfg_float("c_puct"),
+                                    seed=cfg_int("seed") + 300_000 + iteration,
+                                )
+                            )
+                        except Exception as gate_exc:
+                            absolute_gate_abort_message = f"absolute eval gate unavailable: {gate_exc}"
+                            raise
+                    composite_override: float | None = None
+                    if use_h2h_only and pre_gate_stats:
+                        composite_override = float(pre_gate_stats.get("baseline_h2h_score", level_mean_composite))
+                    composite_for_signal = composite_override if composite_override is not None else level_mean_composite
                     is_best = monitor.log_eval_composite(
                         iteration=iteration,
                         level_scores=level_scores,
+                        composite_override=composite_override,
                     )
                     eval_stats = {
-                        "score": float(sum(level_scores.values()) / max(1, len(level_scores))),
+                        "score": float(composite_for_signal),
                         "eval_total_wins": eval_score_wins,
                         "eval_total_losses": eval_score_losses,
                         "eval_total_draws": eval_score_draws,
                         "eval_levels": ",".join(level_scores.keys()),
+                        "eval_level_mean": level_mean_composite,
+                        "eval_composite_signal": "h2h_only" if composite_override is not None else "mean_levels",
                         **{
                             f"eval_score_{level}": score
                             for level, score in level_scores.items()
@@ -315,8 +348,7 @@ def main() -> None:
                                     iteration=iteration,
                                     message=f"failed to restore best checkpoint: {restore_exc}",
                                 )
-                    gate_min_iteration = cfg_int("eval_absolute_min_iteration")
-                    if iteration < gate_min_iteration:
+                    if not gate_runs_this_iter:
                         monitor.log_warning(
                             iteration=iteration,
                             message=(
@@ -324,6 +356,11 @@ def main() -> None:
                                 f"iteration {iteration}/{gate_min_iteration}; baseline abort disabled"
                             ),
                         )
+                        gate_stats: dict[str, float | int | str] = {}
+                        gate_failed = False
+                    elif pre_gate_stats:
+                        gate_stats = pre_gate_stats
+                        gate_failed = pre_gate_failed
                     else:
                         absolute_gate_ckpt = checkpoint_dir / "_absolute_gate_candidate.ckpt"
                         trainer.save_checkpoint(str(absolute_gate_ckpt))
@@ -342,6 +379,7 @@ def main() -> None:
                         except Exception as gate_exc:
                             absolute_gate_abort_message = f"absolute eval gate unavailable: {gate_exc}"
                             raise
+                    if gate_runs_this_iter:
                         if gate_stats:
                             eval_stats.update(gate_stats)
                             monitor.log_warning(

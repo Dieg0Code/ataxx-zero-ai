@@ -39,6 +39,8 @@ class MCTS:
         use_amp: bool = True,
         cache_size: int = 20_000,
         leaf_batch_size: int = 8,
+        dirichlet_alpha: float = 0.10,
+        dirichlet_frac: float = 0.25,
     ) -> None:
         self.model = model
         self.model.eval()
@@ -49,6 +51,8 @@ class MCTS:
         self.use_amp = use_amp and self.device.type == "cuda"
         self.cache_size = max(0, int(cache_size))
         self.leaf_batch_size = max(1, int(leaf_batch_size))
+        self.dirichlet_alpha = float(dirichlet_alpha)
+        self.dirichlet_frac = float(dirichlet_frac)
         self._inference_cache: OrderedDict[
             bytes,
             tuple[np.ndarray, np.ndarray, float],
@@ -104,7 +108,7 @@ class MCTS:
             self._expand(root, board)
 
         if add_dirichlet_noise and root.children:
-            self._add_dirichlet_noise(root, alpha=0.3, frac=0.25)
+            self._add_dirichlet_noise(root, alpha=self.dirichlet_alpha, frac=self.dirichlet_frac)
 
         sims_done = 0
         while sims_done < self.n_simulations:

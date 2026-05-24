@@ -6,68 +6,34 @@ from agents.heuristic import HEURISTIC_LEVELS
 
 CurriculumMix = dict[str, float]
 
+# v13 onward: heurísticas se sacan del self-play. La mix solo controla la
+# proporción self/heuristic/random del muestreo de oponentes. La porción de
+# self se redirige a la league con probabilidad league_selfplay_checkpoint_prob,
+# así que "self" termina siendo ~mitad red actual, ~mitad checkpoints viejos.
+#
+# Los sub-buckets heu_* siguen presentes con valor uniforme dummy para que
+# sample_opponent_from_curriculum no rompa si en algún experimento futuro se
+# vuelve a subir heuristic > 0 — pero por default la fase >=1 mantiene
+# heuristic=0.0 y nunca se samplea.
+
+
+def _heuristic_dummy_mix() -> dict[str, float]:
+    uniform = 1.0 / float(len(HEURISTIC_LEVELS))
+    return {f"heu_{level}": uniform for level in HEURISTIC_LEVELS}
+
 
 def get_curriculum_mix(iteration: int) -> CurriculumMix:
-    """Phase-based opponent mix tuned to avoid early self-play collapse."""
+    """Phase-based opponent mix. Heuristics out, league via league_selfplay_checkpoint_prob."""
     if iteration <= 12:
-        return {
-            "self": 0.10,
-            "heuristic": 0.88,
-            "random": 0.02,
-            "heu_easy": 0.02,
-            "heu_normal": 0.18,
-            "heu_hard": 0.42,
-            "heu_apex": 0.18,
-            "heu_gambit": 0.08,
-            "heu_sentinel": 0.12,
-        }
-    if iteration <= 30:
-        return {
-            "self": 0.25,
-            "heuristic": 0.72,
-            "random": 0.03,
-            "heu_easy": 0.00,
-            "heu_normal": 0.10,
-            "heu_hard": 0.38,
-            "heu_apex": 0.22,
-            "heu_gambit": 0.12,
-            "heu_sentinel": 0.18,
-        }
-    if iteration <= 60:
-        return {
-            "self": 0.45,
-            "heuristic": 0.53,
-            "random": 0.02,
-            "heu_easy": 0.08,
-            "heu_normal": 0.12,
-            "heu_hard": 0.24,
-            "heu_apex": 0.20,
-            "heu_gambit": 0.16,
-            "heu_sentinel": 0.20,
-        }
-    if iteration <= 90:
-        return {
-            "self": 0.58,
-            "heuristic": 0.40,
-            "random": 0.02,
-            "heu_easy": 0.10,
-            "heu_normal": 0.14,
-            "heu_hard": 0.20,
-            "heu_apex": 0.20,
-            "heu_gambit": 0.18,
-            "heu_sentinel": 0.18,
-        }
-    return {
-        "self": 0.65,
-        "heuristic": 0.33,
-        "random": 0.02,
-        "heu_easy": 0.12,
-        "heu_normal": 0.15,
-        "heu_hard": 0.18,
-        "heu_apex": 0.18,
-        "heu_gambit": 0.20,
-        "heu_sentinel": 0.17,
-    }
+        base = {"self": 0.95, "heuristic": 0.0, "random": 0.05}
+    elif iteration <= 30:
+        base = {"self": 0.97, "heuristic": 0.0, "random": 0.03}
+    elif iteration <= 90:
+        base = {"self": 0.98, "heuristic": 0.0, "random": 0.02}
+    else:
+        base = {"self": 0.99, "heuristic": 0.0, "random": 0.01}
+    base.update(_heuristic_dummy_mix())
+    return base
 
 
 def sample_opponent_from_curriculum(

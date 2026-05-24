@@ -295,6 +295,8 @@ def execute_self_play(
         use_amp=cfg_bool("mcts_use_amp"),
         cache_size=max(0, cfg_int("mcts_cache_size")),
         leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
+        dirichlet_alpha=cfg_float("mcts_dirichlet_alpha"),
+        dirichlet_frac=cfg_float("mcts_dirichlet_frac"),
     )
 
     episodes = cfg_int("episodes_per_iter")

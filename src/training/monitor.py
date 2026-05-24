@@ -177,10 +177,14 @@ class TrainingMonitor:
         *,
         iteration: int,
         level_scores: Mapping[str, float],
+        composite_override: float | None = None,
     ) -> bool:
-        if len(level_scores) == 0:
+        if len(level_scores) == 0 and composite_override is None:
             return False
-        composite_score = float(sum(level_scores.values()) / len(level_scores))
+        if composite_override is not None:
+            composite_score = float(composite_override)
+        else:
+            composite_score = float(sum(level_scores.values()) / len(level_scores))
         is_best = composite_score > self.best_eval_score
         if is_best:
             self.best_eval_score = composite_score
@@ -188,10 +192,11 @@ class TrainingMonitor:
             f"{level}:{score:.3f}"
             for level, score in level_scores.items()
         )
+        signal_tag = "h2h_only" if composite_override is not None else "mean_levels"
         suffix = " *** BEST ***" if is_best else ""
         print(
             f"{self._prefix(iteration)} EVAL_COMPOSITE score={composite_score:.3f} "
-            f"[{levels_txt}]{suffix}",
+            f"signal={signal_tag} [{levels_txt}]{suffix}",
         )
         return is_best
 

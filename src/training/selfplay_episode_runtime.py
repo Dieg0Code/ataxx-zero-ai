@@ -269,6 +269,8 @@ def build_sequential_checkpoint_mcts_pool(
             use_amp=cfg_bool("mcts_use_amp"),
             cache_size=max(0, cfg_int("mcts_cache_size")),
             leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
+            dirichlet_alpha=cfg_float("mcts_dirichlet_alpha"),
+            dirichlet_frac=cfg_float("mcts_dirichlet_frac"),
         )
     return pool
 
@@ -307,6 +309,8 @@ def init_selfplay_process_worker(
         use_amp=use_amp,
         cache_size=max(0, cfg_int("mcts_cache_size")),
         leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
+        dirichlet_alpha=cfg_float("mcts_dirichlet_alpha"),
+        dirichlet_frac=cfg_float("mcts_dirichlet_frac"),
     )
     _WORKER_OPPONENT_MCTS_POOL = {}
     for participant_id, (opponent_state_dict, opponent_cfg) in opponent_specs.items():
@@ -329,6 +333,8 @@ def init_selfplay_process_worker(
             use_amp=use_amp,
             cache_size=max(0, cfg_int("mcts_cache_size")),
             leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
+            dirichlet_alpha=cfg_float("mcts_dirichlet_alpha"),
+            dirichlet_frac=cfg_float("mcts_dirichlet_frac"),
         )
 
 

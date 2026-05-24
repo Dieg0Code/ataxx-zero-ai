@@ -167,7 +167,9 @@ def curate_npz_paths(
         source_report["input_examples"] = n
         quality_tag = normalize_replay_tag(metadata.get("quality_tag", ""))
         is_human = _is_human_source(metadata, human_path_hint in path.as_posix())
-        useful_human_draw = is_human and quality_tag in QUALITY_PRIORITIZE
+        # Toda partida humana es usable por default — incluso forced_draws sin tag
+        # explicito. Solo se excluyen tags QUALITY_EXCLUDE (e.g. "discard").
+        useful_human_draw = is_human
         if quality_tag in QUALITY_EXCLUDE or (
             bool(metadata.get("forced_draw", False)) and not useful_human_draw
         ):

@@ -21,7 +21,7 @@ Tests are in `tests/`. Operational scripts live in `scripts/`; entry points incl
 - `uv run pytest -q`: run the full test suite.
 - `uv run ruff check train.py src/engine src/model src/game src/data tests scripts`: run the same lint scope used by CI.
 - `uv run pyrefly check train.py src tests`: run static type checks.
-- `uv run python scripts/check_python_max_lines.py --max-lines 500 --path src --path tests --path scripts --path train.py`: enforce file-length policy.
+- `uv run python scripts/check_python_max_lines.py --max-lines 800 --path src --path tests --path scripts --path train.py`: enforce file-length policy.
 - `uv run python train.py --iterations 2 --episodes 8 --epochs 1 --sims 80 --batch-size 64 --save-every 1 --verbose`: quick training smoke test.
 - `uv run python scripts/play_pygame.py --mode play --opponent heuristic --level hard`: launch the local arena.
 

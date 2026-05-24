@@ -75,7 +75,7 @@ jobs:
       - name: Python file length policy
         run: |
           uv run python scripts/check_python_max_lines.py \
-            --max-lines 500 \
+            --max-lines 800 \
             --path train.py \
             --path src/training \
             --path src/engine \

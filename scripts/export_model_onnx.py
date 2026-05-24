@@ -84,6 +84,7 @@ def main() -> None:
             "policy": {0: "batch_size"},
             "value": {0: "batch_size"},
         },
+        dynamo=False,
     )
     print(f"ONNX exported: {output_path}")
 

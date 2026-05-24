@@ -92,6 +92,8 @@ CONFIG: dict[str, int | float | bool | str] = {
     "mcts_use_amp": True,
     "mcts_cache_size": 100_000,
     "mcts_leaf_batch_size": 32,
+    "mcts_dirichlet_alpha": 0.10,
+    "mcts_dirichlet_frac": 0.25,
     "fail_on_selfplay_parallel_error": True,
     "fail_on_hf_upload_error": True,
     "opponent_self_prob": 0.45,
@@ -134,6 +136,7 @@ CONFIG: dict[str, int | float | bool | str] = {
     "human_replay_path": "", "human_batch_fraction": 0.0, "human_value_mask": False,
     "symmetry_augmentation": False,
     "value_head_depth": 1, "count_head_enabled": False, "count_loss_coeff": 0.0,
+    "eval_composite_uses_h2h_only": False,
 }
 def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parents[2]

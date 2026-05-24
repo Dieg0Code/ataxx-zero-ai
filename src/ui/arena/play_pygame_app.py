@@ -184,6 +184,20 @@ def _load_system(checkpoint_path: str, device: str) -> AtaxxZero:
                 ) from exc
     system.eval()
     system.to(device)
+    if checkpoint_path:
+        onnx_path = Path(checkpoint_path).with_suffix(".onnx")
+        if onnx_path.exists():
+            try:
+                from inference.onnx_model import OnnxModel
+
+                system.model = OnnxModel(  # type: ignore[assignment]
+                    onnx_path,
+                    num_input_channels=int(system.model.num_input_channels),
+                    num_actions=int(system.model.num_actions),
+                )
+                print(f"[onnx] using ONNX inference from {onnx_path}")
+            except Exception as exc:
+                print(f"[onnx] failed to load {onnx_path}, falling back to torch: {exc}")
     return system
 
 
