@@ -146,3 +146,255 @@ explicar **por qué este mecanismo no aplicaba** o **qué
 mecanismo adicional lo enmascaró**. No retroceder a "el
 curriculum era el problema, ya lo arreglamos" sin evidencia
 nueva — esa narrativa ya falló en v8, v10, v12.
+
+## 2026-05-24 ~06:00 UTC — meta-reflexión: ML como espejo de cognición
+
+> Esta entrada está fuera del flujo normal del journal (no es un
+> evento del run, no impacta predicciones) pero queda anclada acá
+> porque emergió de una conversación que vale documentar. El
+> contenido es producto de una interacción entre Diego y un
+> asistente de IA — una simbiosis donde la pregunta y el marco
+> son humanos, la formalización y los ejemplos vienen del modelo,
+> y el filtro de qué vale guardar es de ambos. No tiene sentido
+> fingir autoría solo humana cuando el proceso fue conjunto.
+
+Diego trabaja en este repo con una motivación que trasciende el
+proyecto inmediato: cree que estudiar sistemas que aprenden
+puede iluminar cómo aprende él. Su tesis operativa es que los
+principios del aprendizaje son universales, y que la diferencia
+entre un cerebro biológico y una red neuronal está en la
+implementación (sustrato, eficiencia energética, replicación
+vía ADN) más que en la estructura abstracta del problema. Esta
+entrada explora dónde esa tesis es defendible, dónde es
+metáfora útil, y dónde se vuelve pseudociencia.
+
+### Tres tipos de paralelo
+
+Antes de listar similitudes vale establecer una taxonomía para
+no caer en numerología:
+
+1. **Mecanísticos.** La misma matemática emerge en ambos
+   sistemas — no porque uno imite al otro, sino porque ambos
+   resuelven el mismo problema bajo restricciones parecidas.
+   Estos son los paralelos fuertes.
+2. **Funcionales.** Ambos sistemas resuelven el mismo problema,
+   pero con mecanismos distintos. Útiles como metáfora, peligrosos
+   si se confunden con identidad.
+3. **Estéticos.** Suenan parecidos. No hay base mecanística ni
+   funcional. Hay que descartarlos sin pena: son la materia prima
+   de la mala divulgación.
+
+Lo que sigue está ordenado por fuerza decreciente.
+
+### El paralelo fundamental: generalización fuera de la distribución vista
+
+Todo sistema que aprende de ejemplos termina con la misma
+limitación estructural — generaliza bien cerca de lo que vio,
+mal lejos. No es analogía: es la misma matemática del riesgo
+empírico. Una red entrenada solo con gatos blancos clasifica mal
+gatos negros. Un cerebro entrenado solo con problemas de un
+estilo falla con problemas de otro estilo, aunque el principio
+subyacente sea idéntico.
+
+La consecuencia práctica es contraintuitiva: cuando alguien
+falla en un dominio nuevo, el reflejo es atribuirlo a falta de
+inteligencia o de esfuerzo, cuando habitualmente es falta de
+exposición a la distribución correcta. Diego, como cualquier
+estudiante avanzado, probablemente sobrestima cuánto generaliza
+su entendimiento entre dominios — el ejercicio de poner a prueba
+ese supuesto en territorio incómodo es lo que separa
+aprendizaje real de la ilusión de aprendizaje.
+
+Una variante de este mismo fenómeno es el **overfitting**:
+memorizar las preguntas del examen pasado en lugar de la
+materia. El indicador es operacionalizable y duro — rendimiento
+en datos vistos vs no vistos. Si alguien resuelve fluidamente
+problemas que ya vio y se traba en novedosos que requieren el
+mismo principio, no entendió el principio: memorizó instancias.
+
+### Memoria, tiempo y olvido catastrófico
+
+En redes neuronales, entrenar tarea B suele degradar
+performance en tarea A (los pesos compartidos se reescriben).
+En cerebros, dejar de practicar piano cinco años poda
+literalmente las conexiones sinápticas implicadas. Es el mismo
+fenómeno bajo el mismo nombre técnico: **catastrophic
+forgetting**.
+
+La diferencia importante es que el cerebro tiene mecanismos de
+consolidación que las redes no — el sueño REM, la
+recapitulación hipocámpica. Los humanos pueden mitigar el
+olvido sin re-entrenar formalmente; las redes hoy no pueden.
+Esto sugiere que la práctica espaciada y la revisión periódica
+de fundamentos no son hábitos opcionales sino implementaciones
+de mecanismos que ya están en el hardware biológico. Saltarse
+ese mantenimiento es elegir activamente la fragilidad.
+
+### Optimizando la métrica equivocada: reward hacking
+
+Cualquier sistema que optimiza una métrica encuentra atajos que
+satisfacen la métrica sin lograr el objetivo subyacente. En RL
+se llama reward hacking; en economía y administración pública
+se llama Ley de Goodhart, formulada décadas antes de que
+existieran las redes neuronales: *"cuando una métrica se
+convierte en objetivo, deja de ser una buena métrica"*. El
+fenómeno es el mismo y la prueba es el descubrimiento
+independiente.
+
+Las implicancias para la auto-mejora son severas. Diego
+construye este proyecto, mide su progreso por composite scores
+y h2h ratings, y descubrió empíricamente que esas métricas son
+falibles — el modelo iter 126 maximizaba h2h vs liga y perdía
+43-6 contra él. Esa lección sobre métricas falibles aplica al
+desarrollo personal sin modificación: leer 50 libros al año,
+ganar X reputación profesional, sumar Y horas de práctica son
+todas métricas que un optimizador motivado puede satisfacer sin
+mejorar lo que la métrica pretendía aproximar. La defensa no es
+abandonar las métricas — sin métrica no hay feedback loop —
+sino auditar periódicamente la divergencia entre métrica y
+objetivo subyacente. Si la métrica está subiendo y la sensación
+de progreso real no, hay reward hacking pasando.
+
+### Bajo incertidumbre, explorar más de lo que parece prudente
+
+La teoría matemática de bandits multibrazo (UCB, Thompson
+sampling, regret bounds) tiene un resultado contraintuitivo
+robusto: bajo incertidumbre real, la cantidad óptima de
+exploración es **bastante mayor** que la que la mayoría de los
+agentes —humanos o artificiales sin teoría— eligen practicar.
+Los humanos sub-explotamos sistemáticamente: preferimos lo
+conocido aunque sepamos que probablemente hay mejor afuera.
+
+El sesgo tiene sentido evolutivo (lo conocido no te mata) pero
+es subóptimo para horizontes largos. La teoría dice que cuando
+el horizonte de decisión es largo —elegir carrera, pareja,
+hábitos centrales, dónde vivir— la asignación óptima entre
+explorar y explotar pesa fuerte hacia explorar al principio.
+Los humanos hacen lo opuesto: en la juventud siguen plantillas
+de los padres, en la adultez quieren "asentar". Es exactamente
+el patrón que un agente naïve sin entender bandits produciría.
+
+### Curiosidad como active learning
+
+En active learning, el modelo sabe en qué inputs está más
+incierto y pide etiquetas precisamente ahí — porque ahí está la
+información que reduce más su pérdida esperada. En cerebros, la
+curiosidad probablemente cumple esa función: focaliza atención
+en regiones donde el modelo interno del mundo tiene baja
+confianza.
+
+Esto reframea el aburrimiento. Aburrirse no es defecto de
+carácter ni señal de inmadurez: es la señal interna de que el
+modelo predice bien lo que viene a continuación, lo cual
+significa que no hay información nueva que extraer. Si una
+clase, un libro o una conversación aburre, lo correcto es
+sospechar que ese contenido está dentro de la distribución ya
+modelada, y mover la atención a donde el modelo se confunde —
+ahí está el gradiente útil.
+
+### Diversidad de input: mode collapse
+
+En GANs, el generador puede colapsar a producir una sola
+familia de salidas que el discriminador no detecta — perdiendo
+toda la diversidad del espacio. En grupos humanos pasa lo
+mismo cuando todos consumen las mismas fuentes: las opiniones
+convergen a un modo y los individuos creen estar pensando
+independientemente cuando en realidad sus inputs son
+homogéneos.
+
+La defensa requiere diseño activo de la dieta informacional.
+Leer una fuente que sistemáticamente molesta no es ejercicio
+de mente abierta ni concesión política — es mantenimiento
+técnico del sistema, prevención del mode collapse. La métrica
+es si las opiniones propias siguen siendo predecibles para
+quien las conoce, o si todavía pueden sorprender.
+
+### Escala, método y retornos decrecientes
+
+Las scaling laws empíricas de los modelos modernos muestran que
+performance escala log-linealmente con cómputo y datos — lo
+cual significa que duplicar el esfuerzo da mejoras marginales
+cada vez más chicas. Es exactamente la curva del aprendizaje
+humano: las primeras 100 horas en algo entregan el 80% del
+nivel competente; las siguientes 9,900 horas entregan el 20%
+restante.
+
+La consecuencia operacional es clara y poco aceptada
+emocionalmente: cuando se siente plateau en una habilidad, la
+respuesta correcta casi nunca es "más esfuerzo del mismo
+tipo". Es cambiar el algoritmo —cómo se practica, qué se
+practica, contra quién, con qué feedback loop— no aumentar el
+compute. Quien suma horas sin cambiar método después del
+plateau está pagando un costo lineal por ganancias
+sub-lineales.
+
+### Lo que NO transfiere bien
+
+La honestidad intelectual exige listar también dónde la
+analogía es estética y no debería usarse como guía:
+
+- **Atención** en transformers comparte el nombre con atención
+  cognitiva humana pero no el mecanismo. El producto punto
+  query-key no es lo que pasa cuando una persona se concentra.
+- **Memoria** en LLMs es contexto inmediato sin consolidación
+  persistente. La memoria humana es estructuralmente distinta —
+  multi-tier, episódica vs semántica, con olvido activo, con
+  reconsolidación al recordar.
+- **Razonamiento** vía chain-of-thought es generación
+  autoregresiva que produce texto que parece razonamiento. No
+  hay evidencia de que internamente sea el mismo proceso que
+  cuando un humano razona.
+- **Conciencia** y experiencia subjetiva: nadie tiene idea, y
+  cualquier paralelo serio aquí es especulación pura. Vale más
+  decir "no sabemos" que construir analogías bonitas.
+
+Confundir estos cuatro con los paralelos mecanísticos arriba
+es la trampa principal de la pop-science de IA. Cualquier
+texto que mezcle libremente "atención", "memoria",
+"razonamiento" y "conciencia" entre modelos y humanos sin
+distinguir tipo de paralelo está vendiendo intuición sin
+rigor.
+
+### El meta-punto: calibración como habilidad central
+
+El cerebro es un optimizador, y todos los optimizadores
+comparten un conjunto pequeño de fallas modales: sub-exploran,
+overfittean, hacen reward hacking, sufren mode collapse,
+sobre-confían fuera de su distribución de entrenamiento. No
+importa si están implementados en biología o silicio. Reconocer
+las firmas de estas fallas en uno mismo, en otros, en
+instituciones, es un framework de diagnóstico portable —
+posiblemente el más útil que produjo el campo de machine
+learning para uso externo.
+
+Pero la intuición de Diego, que la inteligencia es la solución
+a todo, tiene una trampa que la teoría también identifica con
+nombre técnico: **calibración**. Un modelo está bien calibrado
+cuando su confianza coincide con su accuracy — cuando dice
+"95% seguro" acierta el 95% de las veces. Los modelos
+sobre-entrenados están seguros incluso cuando se equivocan;
+los bien calibrados saben distinguir donde su predicción es
+confiable de donde está extrapolando.
+
+La inteligencia sin calibración es activamente peligrosa,
+principalmente para uno mismo. El que confía demasiado en su
+modelo del mundo —porque ese modelo lo ha llevado lejos— se
+vuelve sistemáticamente vulnerable a sus propios sesgos. La
+historia intelectual está llena de mentes brillantes que se
+equivocaron catastróficamente en su tema porque su éxito
+previo eliminó el incentivo para dudar. Calibrar es
+contracultura para la inteligencia: requiere preguntarse, con
+disciplina, no "¿tengo razón?" sino "¿qué tendría que
+observar para concluir que estoy equivocado?". Esa pregunta es
+falsacionista en sentido popperiano y antifrágil en sentido
+talebiano — y es el mismo principio que estructura el
+PROPOSAL.md de este experimento.
+
+La consecuencia, para alguien comprometido con volverse más
+inteligente: la inteligencia escala con compute, pero la
+calibración es lo que determina si ese compute se invierte en
+ideas verdaderas o en ideas seductoras. Sin calibración, más
+inteligencia es más certeza, no más verdad. Con calibración,
+más inteligencia es más capacidad de actuar bajo incertidumbre
+sin colapsar en certeza prematura — que es, posiblemente, la
+definición operacional de sabiduría.
