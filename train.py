@@ -137,10 +137,11 @@ def main() -> None:
         dirpath=str(checkpoint_dir),
         filename="ataxx-epoch{epoch:02d}-val{val_loss:.3f}",
         auto_insert_metric_name=False,
-        save_top_k=3,
+        save_top_k=1,
         monitor="val/loss",
         mode="min",
         save_last=True,
+        save_weights_only=True,
     )
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
     logger = build_training_logger(log_dir)
