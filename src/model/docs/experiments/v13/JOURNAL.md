@@ -508,3 +508,44 @@ Con pre-registration: criterio acordado de antemano + observación
 del dato → decisión técnica clara en minutos, sin debate
 emocional ni hundir más compute. El postmortem viene después si
 v13 muere; el JOURNAL captura el momento.
+
+## 2026-05-24 ~07:00 UTC — launch v13.1
+
+Diego autorizó relanzar con bundle conservador apuntando a
+hipótesis #1 (estabilidad del optimizer con arch escalada).
+
+**Cambios mínimos v13 → v13.1:**
+
+| Param | v13 | v13.1 |
+|---|---|---|
+| `learning_rate` | 3e-4 (default) | **1e-4** |
+| `pretrain_epochs` | 3 | **8** |
+| `hf_run_id` | `policy_spatial_v13` | `policy_spatial_v13_1` |
+| `wandb_run_name` | `policy_spatial_v13` | `policy_spatial_v13_1` |
+
+No se toca arch, curriculum, mcts_sims, ni ninguna otra palanca.
+Esto es el menor cambio posible compatible con la hipótesis #1.
+
+**Reglas de aborto reforzadas** (más estrictas porque ya conocemos
+el modo de falla):
+
+- 30 min post-arranque self-play: `train/loss` > 4.0 en 2+ steps
+  consecutivos → abort.
+- iter 12 (~1h): `train/policy_accuracy` < 8% promedio → abort.
+- iter 30: `train/loss` > 2.8 (criterio original del PROPOSAL).
+
+**Outcomes esperados y rutas:**
+
+| Loss tracking primera hora | Diagnóstico | Próximo paso |
+|---|---|---|
+| Baja monotónica (3.96 → <3.5) | Hip #1 confirmada | Dejar correr a 600 iters |
+| Sigue subiendo | Hip #1 falsa | v13.2 = ablation arch v12 |
+| Plana ~3.5 | Mejora parcial, no aprende | Atacar Hip #2 (value heads) |
+
+**Recordatorio para el postmortem si v13.1 también muere:**
+las predicciones del PROPOSAL.md aplican igual a v13.1 — misma
+hipótesis principal (pure self-play + arch escalada), distintos
+hparams operacionales. Si v13.1 falla, hay que evaluar si la
+hipótesis principal sigue viva o si el patrón está mostrando que
+la combinación arch escalada + pure self-play desde casi-scratch
+es estructuralmente brittle independiente del LR.
