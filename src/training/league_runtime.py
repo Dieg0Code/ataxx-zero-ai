@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from game.constants import OBSERVATION_CHANNELS
 from inference.checkpoint_league_runtime import (
     apply_series_to_league,
     choose_champion_id,
@@ -122,10 +123,19 @@ def load_checkpoint_model_spec(entry: CheckpointPoolEntry) -> CheckpointModelSpe
     payload = torch.load(str(entry.artifact_path), map_location="cpu", weights_only=False)
     if not isinstance(payload, dict):
         raise ValueError("Invalid checkpoint payload: expected dictionary.")
+    state_dict = _normalize_model_state_dict(payload)
+    model_cfg = _extract_model_cfg(payload)
+    # _normalize_model_state_dict aplica adapt_state_dict_observation_channels
+    # que zero-padea el input_proj.weight a OBSERVATION_CHANNELS. Para que el
+    # opponent model se construya con la shape que matchea el padded weight,
+    # forzamos num_input_channels al actual. Pre-v15 checkpoints tenian 11
+    # canales en sus hparams; sin este override el modelo se buildea con 11
+    # y revienta al load_state_dict con shape mismatch (PM v15.1).
+    model_cfg["num_input_channels"] = float(OBSERVATION_CHANNELS)
     return CheckpointModelSpec(
         entry=entry,
-        state_dict=_normalize_model_state_dict(payload),
-        model_cfg=_extract_model_cfg(payload),
+        state_dict=state_dict,
+        model_cfg=model_cfg,
     )
 
 
