@@ -76,7 +76,7 @@
   "wandb_run_name": "policy_spatial_v15_2",
   "fail_on_selfplay_parallel_error": false,
   "export_onnx": false,
-  "compile_model": true,
+  "compile_model": false,
   "lr_warmup_steps": 1000,
   "adam_beta2": 0.95,
   "mcts_virtual_loss": 1.0,
