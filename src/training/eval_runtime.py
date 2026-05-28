@@ -6,7 +6,7 @@ import numpy as np
 
 from agents.heuristic import heuristic_move
 from game.actions import ACTION_SPACE
-from training.config_runtime import cfg_bool, cfg_int
+from training.config_runtime import cfg_bool, cfg_float, cfg_int
 from training.selfplay_runtime import compute_action_probs
 
 if TYPE_CHECKING:
@@ -69,6 +69,8 @@ def evaluate_model(
         use_amp=cfg_bool("mcts_use_amp"),
         cache_size=max(0, cfg_int("mcts_cache_size")),
         leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
+        fpu_reduction=cfg_float("mcts_fpu_reduction"),
+        virtual_loss=cfg_float("mcts_virtual_loss"),
     )
     rng = np.random.default_rng(seed=seed)
     wins = 0

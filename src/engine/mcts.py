@@ -41,6 +41,11 @@ class MCTS:
         leaf_batch_size: int = 8,
         dirichlet_alpha: float = 0.10,
         dirichlet_frac: float = 0.25,
+        fpu_reduction: float = 0.25,
+        virtual_loss: float = 1.0,
+        prior_uniform_mix: float = 0.0,
+        forced_playout_k: float = 0.0,
+        policy_target_prune_forced: bool = False,
     ) -> None:
         self.model = model
         self.model.eval()
@@ -53,6 +58,16 @@ class MCTS:
         self.leaf_batch_size = max(1, int(leaf_batch_size))
         self.dirichlet_alpha = float(dirichlet_alpha)
         self.dirichlet_frac = float(dirichlet_frac)
+        self.fpu_reduction = float(fpu_reduction)
+        self.virtual_loss = float(virtual_loss)
+        # v15.2: mezcla de prior con uniforme. prior_eff = (1-a)*p + a*(1/N).
+        # Evita que un policy sobreconfiado colapse el search a 1-2 acciones.
+        self.prior_uniform_mix = max(0.0, min(1.0, float(prior_uniform_mix)))
+        # v15 final: Forced Playouts (KataGo). En root, cada hijo con prior > 0
+        # recibe un minimo de visitas n_forced = k * prior * sqrt(N_root). Si
+        # alguno esta por debajo, se prioriza antes que el PUCT normal.
+        self.forced_playout_k = max(0.0, float(forced_playout_k))
+        self.policy_target_prune_forced = bool(policy_target_prune_forced)
         self._inference_cache: OrderedDict[
             bytes,
             tuple[np.ndarray, np.ndarray, float],
@@ -120,8 +135,10 @@ class MCTS:
                 scratch_board = board.copy()
                 search_path = [node]
 
+                is_root_descent = True
                 while node.children:
-                    action_idx, node = self._select_child(node)
+                    action_idx, node = self._select_child(node, is_root=is_root_descent)
+                    is_root_descent = False
                     move = ACTION_SPACE.decode(action_idx)
                     scratch_board.step(move)
                     search_path.append(node)
@@ -130,6 +147,11 @@ class MCTS:
                     value = self._terminal_value_for_current_player(scratch_board)
                     self._backpropagate(search_path, value)
                 else:
+                    # Virtual loss: penalize this branch temporarily so subsequent
+                    # sims in the same batch don't re-select the same leaf. Reverted
+                    # after expand_batch when the real value is backpropagated.
+                    if self.virtual_loss > 0.0 and len(search_path) > 1:
+                        self._apply_virtual_loss(search_path)
                     pending.append((node, scratch_board, search_path))
                 sims_done += 1
 
@@ -137,6 +159,8 @@ class MCTS:
                 leaves = [(node, leaf_board) for node, leaf_board, _ in pending]
                 values = self._expand_batch(leaves)
                 for (_, _, search_path), value in zip(pending, values, strict=True):
+                    if self.virtual_loss > 0.0 and len(search_path) > 1:
+                        self._revert_virtual_loss(search_path)
                     self._backpropagate(search_path, value)
 
         return self._get_action_probs(root, temperature), root
@@ -182,8 +206,14 @@ class MCTS:
             for action_idx in legal_action_indices:
                 node.children[int(action_idx)] = MCTSNode(prior=uniform_prior)
             return
-        for action_idx, prior in zip(legal_action_indices, legal_priors, strict=True):
-            node.children[int(action_idx)] = MCTSNode(prior=float(prior / prior_sum))
+        normalized = legal_priors / prior_sum
+        if self.prior_uniform_mix > 0.0:
+            n = float(legal_action_indices.size)
+            normalized = (1.0 - self.prior_uniform_mix) * normalized + (
+                self.prior_uniform_mix / n
+            )
+        for action_idx, prior in zip(legal_action_indices, normalized, strict=True):
+            node.children[int(action_idx)] = MCTSNode(prior=float(prior))
 
     @staticmethod
     def _observation_cache_key(observation: np.ndarray) -> bytes:
@@ -270,15 +300,50 @@ class MCTS:
             child = node.children[action_idx]
             child.prior = (1.0 - frac) * child.prior + frac * float(noise[idx])
 
-    def _select_child(self, node: MCTSNode) -> tuple[int, MCTSNode]:
+    def _select_child(
+        self,
+        node: MCTSNode,
+        is_root: bool = False,
+    ) -> tuple[int, MCTSNode]:
+        # FPTP forced playout: en root, si algun hijo con prior > 0 esta debajo
+        # de su cuota de visitas forzadas (k * prior * sqrt(N_root)), lo elegimos
+        # antes que PUCT normal. Solo aplica en root y solo si k > 0.
+        if is_root and self.forced_playout_k > 0.0 and node.visit_count > 0:
+            sqrt_root = math.sqrt(float(node.visit_count))
+            best_deficit = 0.0
+            forced_action: int | None = None
+            forced_child: MCTSNode | None = None
+            for action_idx, child in node.children.items():
+                if child.prior <= 0.0:
+                    continue
+                n_forced = math.ceil(self.forced_playout_k * child.prior * sqrt_root)
+                deficit = float(n_forced - child.visit_count)
+                if deficit > best_deficit:
+                    best_deficit = deficit
+                    forced_action = action_idx
+                    forced_child = child
+            if forced_child is not None and forced_action is not None:
+                return forced_action, forced_child
+
         best_score = -float("inf")
         tied_actions: list[int] = []
         tied_children: list[MCTSNode] = []
         sqrt_parent = math.sqrt(node.visit_count + 1)
+        # FPU: non-visited siblings get parent_value - fpu_reduction*sqrt(visited_prior_mass).
+        # Without FPU, root with a flat policy gives Q=0 to every child and the search
+        # collapses into ties until value backups differentiate (very slow early training).
+        parent_value = node.value()
+        visited_prior_sum = 0.0
+        for child in node.children.values():
+            if child.visit_count > 0:
+                visited_prior_sum += child.prior
+        fpu_offset = self.fpu_reduction * math.sqrt(visited_prior_sum)
+        fpu_q = parent_value - fpu_offset
 
         for action_idx, child in node.children.items():
             # child.value() is from child-player perspective; negate for parent.
-            q_value = -child.value()
+            # Non-visited children use FPU (parent_value reduced by visited prior mass).
+            q_value = fpu_q if child.visit_count == 0 else -child.value()
             u_value = self.c_puct * child.prior * sqrt_parent / (1 + child.visit_count)
             score = q_value + u_value
             # Early training often produces flat priors/value estimates. If we always
@@ -315,6 +380,19 @@ class MCTS:
             node.value_sum += value
             value = -value
 
+    def _apply_virtual_loss(self, path: list[MCTSNode]) -> None:
+        # Increment visits + add virtual_loss to value_sum so child.value() looks
+        # better-for-itself (i.e. worse-for-parent via the q_parent = -child.value()
+        # flip in _select_child). Skip the root: its value() is informational only.
+        for node in path[1:]:
+            node.visit_count += 1
+            node.value_sum += self.virtual_loss
+
+    def _revert_virtual_loss(self, path: list[MCTSNode]) -> None:
+        for node in path[1:]:
+            node.visit_count -= 1
+            node.value_sum -= self.virtual_loss
+
     def _get_action_probs(self, root: MCTSNode, temperature: float) -> np.ndarray:
         probs = np.zeros(ACTION_SPACE.num_actions, dtype=np.float32)
         if not root.children:
@@ -325,6 +403,28 @@ class MCTS:
             [root.children[action].visit_count for action in actions],
             dtype=np.float32,
         )
+
+        # FPTP policy target pruning: restamos las visitas forzadas del visit
+        # count antes de calcular el policy target — esas visitas fueron por
+        # cuota, no por search organico, asi que sesgan el target. La accion
+        # mas visitada NO se podia (se queda como peak del policy).
+        if (
+            self.policy_target_prune_forced
+            and self.forced_playout_k > 0.0
+            and root.visit_count > 0
+        ):
+            sqrt_root = math.sqrt(float(root.visit_count))
+            best_idx = int(np.argmax(visit_counts))
+            pruned = visit_counts.copy()
+            for i, action in enumerate(actions):
+                if i == best_idx:
+                    continue
+                child = root.children[int(action)]
+                if child.prior <= 0.0:
+                    continue
+                n_forced = math.ceil(self.forced_playout_k * child.prior * sqrt_root)
+                pruned[i] = max(0.0, visit_counts[i] - float(n_forced))
+            visit_counts = pruned
 
         if temperature <= 0.0:
             max_visits = float(np.max(visit_counts))

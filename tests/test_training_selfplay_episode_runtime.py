@@ -17,6 +17,10 @@ from training.selfplay_episode_runtime import play_episode
 
 
 class _FakeMCTS:
+    def __init__(self) -> None:
+        # PCR en play_episode lee/restaura este atributo.
+        self.n_simulations = 8
+
     def advance_root(self, root: object | None, action_idx: int) -> tuple[object | None, int]:
         return root, action_idx
 

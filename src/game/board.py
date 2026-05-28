@@ -37,7 +37,11 @@ def _build_radius2_targets() -> tuple[tuple[tuple[int, int], ...], ...]:
 
 
 _RADIUS2_TARGETS = _build_radius2_targets()
-HALF_MOVE_OBS_SCALE = 256.0
+# v15 final: alineado con max_half_moves_per_episode=120. Con scale=120 el
+# canal de "fase del juego" satura a 1.0 cuando se llega al cap (o cerca del
+# fin natural). Antes (256) nunca llegaba arriba de ~0.47 y el modelo no
+# distinguia mid-game de endgame en ese plano.
+HALF_MOVE_OBS_SCALE = 120.0
 
 
 class AtaxxBoard:
@@ -71,6 +75,10 @@ class AtaxxBoard:
         # Track repeated positions including side-to-move.
         self._position_counts: Counter[tuple[int, bytes]] = Counter()
         self._position_counts[self._position_key()] = 1
+        # v15 final: ultimos 2 destinos para canales temporales del observation.
+        # None = aun no hubo jugada en esa posicion del historial.
+        self._last_move_dst: tuple[int, int] | None = None
+        self._prev_move_dst: tuple[int, int] | None = None
 
     def _init_pieces(self) -> None:
         """Standard opening with opposite corners occupied."""
@@ -90,6 +98,8 @@ class AtaxxBoard:
         new_board.p2_count = self.p2_count
         new_board.empty_count = self.empty_count
         new_board._position_counts = Counter(self._position_counts)
+        new_board._last_move_dst = self._last_move_dst
+        new_board._prev_move_dst = self._prev_move_dst
         return new_board
 
     def copy_from(self, other: AtaxxBoard) -> None:
@@ -149,6 +159,9 @@ class AtaxxBoard:
             self.current_player = opponent(self.current_player)
             self.half_moves += 1
             self._position_counts[self._position_key()] += 1
+            # Pass no tiene dst; el historial se desplaza con None equivalente.
+            self._prev_move_dst = self._last_move_dst
+            self._last_move_dst = None
             return
 
         r_start, c_start, r_end, c_end = move
@@ -178,6 +191,9 @@ class AtaxxBoard:
         self.current_player = opponent(self.current_player)
         self.half_moves += 1
         self._position_counts[self._position_key()] += 1
+        # Desplazar historial de dst para los planos last/prev move.
+        self._prev_move_dst = self._last_move_dst
+        self._last_move_dst = (r_end, c_end)
 
     def _infect_neighbors(self, r: int, c: int) -> None:
         """Convert adjacent opponent pieces around (r, c)."""
@@ -281,14 +297,48 @@ class AtaxxBoard:
 
         return clone_dest, jump_dest, active_pieces
 
+    def _captures_potential_plane(self, mover: Player) -> np.ndarray:
+        """Por celda vacia alcanzable por `mover`, cuantas piezas convertiria
+        un move terminando ahi. Normalizado /8 (max captures por jugada). 0
+        en celdas no alcanzables u ocupadas."""
+        plane = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
+        enemy = opponent(mover)
+        own_mask = self.grid == mover
+        enemy_mask = self.grid == enemy
+        own_coords = np.argwhere(own_mask)
+        if own_coords.size == 0:
+            return plane
+        reachable = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=bool)
+        for r, c in own_coords:
+            rr = int(r)
+            cc = int(c)
+            for tr, tc in _RADIUS2_TARGETS[rr * BOARD_SIZE + cc]:
+                if self.grid[tr, tc] == EMPTY:
+                    reachable[tr, tc] = True
+        for r in range(BOARD_SIZE):
+            for c in range(BOARD_SIZE):
+                if not reachable[r, c]:
+                    continue
+                r_min = max(0, r - 1)
+                r_max = min(BOARD_SIZE, r + 2)
+                c_min = max(0, c - 1)
+                c_max = min(BOARD_SIZE, c + 2)
+                captures = int(np.sum(enemy_mask[r_min:r_max, c_min:c_max]))
+                plane[r, c] = float(captures) / 8.0
+        return plane
+
     def get_observation(self) -> np.ndarray:
         """
-        11-channel observation for NN:
+        15-channel observation for NN:
         0: own pieces, 1: opponent pieces, 2: empty squares,
         3: half-move progress, 4: current-position repetition pressure,
         5-6: own clone/jump destinations,
         7-8: opponent clone/jump destinations,
-        9-10: own/opponent active pieces.
+        9-10: own/opponent active pieces,
+        11: own captures potential (max conversions si jugamos aqui, /8),
+        12: opp captures potential (idem desde rival),
+        13: last move dst (1.0 en celda destino del ultimo move),
+        14: prev move dst (idem del penultimo move).
         """
         obs = np.zeros((OBSERVATION_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
         obs[0] = np.asarray(self.grid == self.current_player, dtype=np.float32)
@@ -322,6 +372,13 @@ class AtaxxBoard:
         obs[8] = opp_jump_dest
         obs[9] = own_active
         obs[10] = opp_active
+        # v15 final: nuevos planos tacticos y temporales.
+        obs[11] = self._captures_potential_plane(self.current_player)
+        obs[12] = self._captures_potential_plane(opponent(self.current_player))
+        if self._last_move_dst is not None:
+            obs[13, self._last_move_dst[0], self._last_move_dst[1]] = 1.0
+        if self._prev_move_dst is not None:
+            obs[14, self._prev_move_dst[0], self._prev_move_dst[1]] = 1.0
         return obs
 
     def __str__(self) -> str:

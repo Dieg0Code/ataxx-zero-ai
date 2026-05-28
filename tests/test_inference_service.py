@@ -134,7 +134,8 @@ class TestInferenceService(unittest.TestCase):
             system = service.system
             self.assertIsNotNone(system)
             model = cast(AtaxxTransformerNet, system.model)
-            weight = model.input_proj.weight
+            input_proj = cast(torch.nn.Linear, model.input_proj)
+            weight = input_proj.weight
             self.assertEqual(int(weight.shape[1]), OBSERVATION_CHANNELS)
             self.assertTrue(torch.allclose(weight[:, 4], torch.zeros_like(weight[:, 4])))
             result = service.predict(AtaxxBoard(), mode="strong")

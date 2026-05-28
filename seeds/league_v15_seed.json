@@ -1,0 +1,14 @@
+{
+  "comment": "Semilla de league para v15 — todo al pozo (9 fixes estructurales). Pure RL desde scratch (pretrain off), reward shaping off, value head ligero, pos_embed 2D. Misma seed que v14: ratings reflejan eval histórico hasta v12 y los codenames pre-v15 cargan con transformer_pre_ln=False + pos_embed_2d=False por backfill en checkpoint_compat.",
+  "version": 1,
+  "champion_id": "ckpt:umbral",
+  "entries": [
+    {"codename": "umbral",    "rating": 1380.0, "games_played": 12},
+    {"codename": "paralelo",  "rating": 1350.0, "games_played": 8},
+    {"codename": "liga",      "rating": 1320.0, "games_played": 8},
+    {"codename": "espejismo", "rating": 1310.0, "games_played": 8},
+    {"codename": "fulcro",    "rating": 1300.0, "games_played": 8},
+    {"codename": "amnesia",   "rating": 1280.0, "games_played": 8},
+    {"codename": "centinela", "rating": 1240.0, "games_played": 8}
+  ]
+}

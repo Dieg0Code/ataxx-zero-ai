@@ -29,11 +29,18 @@ class AtaxxZero(pl.LightningModule):
         dropout: float = 0.1,
         value_head_depth: int = 1,
         count_head_enabled: bool = False,
+        transformer_pre_ln: bool = True,
+        pos_embed_2d: bool = True,
+        patch_embed_conv: bool = False,
+        num_input_channels: int | None = None,
         symmetry_augmentation: bool = False,
         scheduler_type: str = "cosine",
         lr_gamma: float = 0.1,
         milestones: list[int] | None = None,
         max_epochs: int = 100,
+        lr_warmup_steps: int = 0,
+        adam_beta1: float = 0.9,
+        adam_beta2: float = 0.999,
     ) -> None:
         super().__init__()
         if milestones is None:
@@ -49,6 +56,8 @@ class AtaxxZero(pl.LightningModule):
         self.lr_gamma = lr_gamma
         self.milestones = milestones
         self.max_epochs = max_epochs
+        self.lr_warmup_steps = max(0, int(lr_warmup_steps))
+        self.adam_betas = (float(adam_beta1), float(adam_beta2))
 
         self.model = AtaxxTransformerNet(
             d_model=d_model,
@@ -58,6 +67,10 @@ class AtaxxZero(pl.LightningModule):
             dropout=dropout,
             value_head_depth=value_head_depth,
             count_head_enabled=count_head_enabled,
+            transformer_pre_ln=transformer_pre_ln,
+            pos_embed_2d=pos_embed_2d,
+            patch_embed_conv=patch_embed_conv,
+            num_input_channels=num_input_channels,
         )
         self.example_input_array = torch.zeros(1, OBSERVATION_CHANNELS, 7, 7)
 
@@ -144,12 +157,10 @@ class AtaxxZero(pl.LightningModule):
         ],
     ) -> dict[str, torch.Tensor]:
         boards, target_pis, target_vs, target_counts, value_mask = batch
-        # Symmetry augmentation D4: aplica un elemento aleatorio por ejemplo
-        # del batch antes del forward. value/count son invariantes bajo D4,
-        # asi que solo obs+policy se transforman. value_mask tampoco cambia.
-        if self.symmetry_augmentation and self.training:
-            from data.symmetry import random_d4_augment_batch
-            boards, target_pis = random_d4_augment_batch(boards, target_pis)
+        # D4 symmetry augmentation se aplica en AtaxxDataset.__getitem__ via el
+        # flag `augment` (controlado por cfg `symmetry_augmentation`). Aqui no
+        # se aplica de nuevo: hacerlo dos veces es funcionalmente valido (D4 es
+        # grupo cerrado) pero confunde y duplica trabajo.
         # Use legality derived from the observed board state, not from sparse targets.
         action_mask = self.model.build_action_mask(boards)
         pi_logits, v_pred, count_pred = self.model.forward_with_count(
@@ -257,37 +268,90 @@ class AtaxxZero(pl.LightningModule):
         sync_dist = bool(getattr(self.trainer, "world_size", 1) > 1)
         self.log("train/lr", current_lr, prog_bar=False, on_epoch=True, sync_dist=sync_dist)
 
+    def _build_optimizer_param_groups(self) -> list[dict[str, object]]:
+        # WD exclusion: LayerNorm, biases, and positional/embedding tensors get
+        # weight_decay=0. Standard practice in modern transformers (GPT/ViT/LLaMA):
+        # decaying these hurts stability without regularization benefit.
+        decay_params: list[torch.nn.Parameter] = []
+        no_decay_params: list[torch.nn.Parameter] = []
+        no_decay_names = {
+            "model.cls_token",
+            "model.pos_embed",
+            "model.cls_pos",
+            "model.row_embed",
+            "model.col_embed",
+        }
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if name in no_decay_names or name.endswith(".bias") or ".norm" in name.lower():
+                no_decay_params.append(param)
+            elif param.ndim < 2:
+                # 1D parameters are usually LN/bias variants — exclude from WD.
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+        return [
+            {"params": decay_params, "weight_decay": self.weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+
     def configure_optimizers(self) -> OptimizerLRScheduler:
-        optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-        )
+        param_groups = self._build_optimizer_param_groups()
+        optimizer = optim.AdamW(param_groups, lr=self.learning_rate, betas=self.adam_betas)
 
         scheduler_type = self.scheduler_type.lower()
         if scheduler_type == "cosine":
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            cosine = optim.lr_scheduler.CosineAnnealingLR(
                 optimizer=optimizer,
-                T_max=self.max_epochs,
+                T_max=max(1, self.max_epochs),
                 eta_min=self.learning_rate * 0.01,
             )
-        elif scheduler_type == "multistep":
-            scheduler = optim.lr_scheduler.MultiStepLR(
+            if self.lr_warmup_steps > 0:
+                # Linear warmup from lr/100 to lr over `lr_warmup_steps` steps,
+                # then cosine. Step-based: scheduler.step() per batch.
+                warmup = optim.lr_scheduler.LinearLR(
+                    optimizer=optimizer,
+                    start_factor=0.01,
+                    end_factor=1.0,
+                    total_iters=self.lr_warmup_steps,
+                )
+                scheduler: optim.lr_scheduler.LRScheduler = optim.lr_scheduler.SequentialLR(
+                    optimizer=optimizer,
+                    schedulers=[warmup, cosine],
+                    milestones=[self.lr_warmup_steps],
+                )
+                return {
+                    "optimizer": optimizer,
+                    "lr_scheduler": {
+                        "scheduler": scheduler,
+                        "interval": "step",
+                        "frequency": 1,
+                    },
+                }
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": cosine,
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
+        if scheduler_type == "multistep":
+            multistep = optim.lr_scheduler.MultiStepLR(
                 optimizer=optimizer,
                 milestones=list(self.milestones),
                 gamma=self.lr_gamma,
             )
-        else:
-            return {"optimizer": optimizer}
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            },
-        }
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": multistep,
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
+        return {"optimizer": optimizer}
 
     def predict_step(
         self,

@@ -137,6 +137,60 @@ CONFIG: dict[str, int | float | bool | str] = {
     "symmetry_augmentation": False,
     "value_head_depth": 1, "count_head_enabled": False, "count_loss_coeff": 0.0,
     "eval_composite_uses_h2h_only": False,
+    "transformer_pre_ln": True,
+    "mcts_fpu_reduction": 0.25,
+    "mcts_virtual_loss": 1.0,
+    "pos_embed_2d": True,
+    "lr_warmup_steps": 0,
+    "adam_beta2": 0.999,
+    "ema_decay": 0.0,
+    "value_mcts_q_lambda": 0.0,
+    # v15.1: tope de jugadas por episodio. Si turn_idx llega aqui sin terminal,
+    # se corta como forced draw (recibe draw_penalty). Evita que partidas
+    # oscilantes (115+ plies que vemos) saturen el buffer con flailing tardio.
+    # 0 = sin tope (legacy <= v15).
+    "max_half_moves_per_episode": 0,
+    # v15.1: diversidad de aperturas. Con prob p, juega N random plies antes
+    # del MCTS real. Esas jugadas NO entran al history (no contaminan policy
+    # target). Bootstrap de diversidad sin tocar el grafo de search.
+    "random_opening_prob": 0.0,
+    "random_opening_max_plies": 0,
+    # v15.2: mezcla de prior MCTS con uniforme (anti-colapso de search).
+    "mcts_prior_uniform_mix": 0.0,
+    # v15.2: PCR (playout cap randomization, KataGo). pcr_enabled activa
+    # un toggle por turno: con prob pcr_full_sim_prob se usan mcts_sims
+    # completos y el ejemplo va al history; el resto usa pcr_fast_sims y
+    # NO entra al history (solo avanza el board). Genera mucha mas
+    # diversidad de posiciones por unidad de wall-time.
+    "pcr_enabled": False,
+    "pcr_fast_sims": 100,
+    "pcr_full_sim_prob": 0.25,
+    # v15.2: resignacion. Si mcts_q de un lado se queda bajo
+    # resign_value_threshold por resign_consecutive_plies turnos seguidos
+    # (despues de resign_min_plies), ese lado pierde y el episodio termina.
+    # Ahorra wall-time en games claramente decididas.
+    "resign_enabled": False,
+    "resign_value_threshold": -0.95,
+    "resign_consecutive_plies": 8,
+    "resign_min_plies": 20,
+    # v15 final: resign audit (KataGo safety net). Con prob p, una resign que
+    # iba a dispararse se omite y el game continua. Sirve para que un threshold
+    # mal calibrado no abandone comebacks sistematicamente — esos games auditados
+    # llegan a terminal o cap y nos dejan evaluar la false-resign rate offline.
+    "resign_audit_prob": 0.10,
+    # v15 final: Forced Playouts + Policy Target Pruning (KataGo). En root,
+    # cada accion con prior > 0 recibe un minimo de visitas forzadas
+    # n_forced = ceil((forced_playout_k * prior * sqrt(N_root))). Despues
+    # se restan esas visitas extra del visit count antes de calcular el
+    # policy target. Mejora la calidad del policy gradient sin tocar la
+    # seleccion de la jugada real. 0.0 = off.
+    "mcts_forced_playout_k": 0.0,
+    "mcts_policy_target_prune_forced": False,
+    # v15 final: patch embedding convolucional 3x3 antes del transformer.
+    # Inyecta inductive bias espacial local sin tocar el backbone. Rompe
+    # checkpoint compat (igual que pos_embed_2d) — los .pt pre-v15 cargan
+    # con patch_embed_conv=False via backfill en checkpoint_compat.
+    "patch_embed_conv": False,
 }
 def ensure_src_on_path() -> None:
     root = Path(__file__).resolve().parents[2]

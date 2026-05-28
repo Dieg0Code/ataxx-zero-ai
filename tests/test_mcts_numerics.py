@@ -281,6 +281,64 @@ class TestMCTSNumerics(unittest.TestCase):
 
         self.assertEqual(chosen_actions, {11, 23})
 
+    def test_fpu_reduces_q_of_unvisited_siblings(self) -> None:
+        """FPU debe asignar Q=parent_value-fpu_offset a hijos no visitados,
+        para que MCTS no los prefiera ciegamente cuando un sibling ya tiene
+        backups buenos (acelera bootstrap del value)."""
+        model = AtaxxTransformerNet(
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+        )
+        mcts = MCTS(model=model, c_puct=0.0, n_simulations=1, device="cpu",
+                    fpu_reduction=0.5)
+        # parent_value > 0 (somos un nodo "ganador" desde el lado del padre).
+        # Un hijo visitado tiene value=-0.5 desde su lado (osea +0.5 para el padre).
+        # Otro hijo no visitado debe heredar Q = parent_value - fpu_offset.
+        root = MCTSNode(prior=1.0)
+        root.visit_count = 2
+        root.value_sum = 1.0  # parent_value = 0.5
+        visited_child = MCTSNode(prior=0.4)
+        visited_child.visit_count = 1
+        visited_child.value_sum = -0.5  # value()=-0.5 → -value()=0.5 desde root
+        unvisited_child = MCTSNode(prior=0.6)
+        root.children = {11: visited_child, 23: unvisited_child}
+
+        # c_puct=0 elimina el U-term: la elección depende solo de Q.
+        # parent_value=0.5; fpu_offset=0.5*sqrt(0.4)≈0.316; fpu_q≈0.184
+        # visited Q = -(-0.5) = 0.5. Sin FPU, ambos verian 0.5 (tie).
+        # Con FPU, el visitado gana porque 0.5 > 0.184.
+        action_idx, _ = mcts._select_child(root)
+        self.assertEqual(action_idx, 11)
+
+    def test_fpu_zero_preserves_legacy_behavior(self) -> None:
+        """Con fpu_reduction=0, los hijos no visitados retornan Q=parent_value
+        (sin reducción). Si parent_value=0, el comportamiento iguala al
+        legacy (Q=0 para no visitados)."""
+        model = AtaxxTransformerNet(
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+        )
+        mcts = MCTS(model=model, c_puct=1.5, n_simulations=1, device="cpu",
+                    fpu_reduction=0.0)
+        root = MCTSNode(prior=1.0)
+        root.visit_count = 4
+        root.children = {
+            11: MCTSNode(prior=0.5),
+            23: MCTSNode(prior=0.5),
+        }
+        chosen: set[int] = set()
+        for seed in range(32):
+            np.random.seed(seed)
+            action_idx, _ = mcts._select_child(root)
+            chosen.add(action_idx)
+        self.assertEqual(chosen, {11, 23})
+
     def test_temperature_zero_breaks_visit_ties_without_fixed_first_action(self) -> None:
         class UniformModel(nn.Module):
             def forward(

@@ -16,7 +16,11 @@ if TYPE_CHECKING:
 PolicyArray: TypeAlias = np.ndarray
 ObservationHistoryEntry: TypeAlias = tuple[np.ndarray, PolicyArray, int]
 ShapedHistoryEntry: TypeAlias = tuple[np.ndarray, PolicyArray, int, float]
-HistoryEntry: TypeAlias = ObservationHistoryEntry | ShapedHistoryEntry
+# v15+: (obs, policy, player_at_turn, shaping_reward, mcts_q). El mcts_q es
+# root.value() despues de las sims de ese turno, desde la perspectiva del que
+# mueve. Sirve para mezclar el value target con la estimacion del search.
+QHistoryEntry: TypeAlias = tuple[np.ndarray, PolicyArray, int, float, float]
+HistoryEntry: TypeAlias = ObservationHistoryEntry | ShapedHistoryEntry | QHistoryEntry
 
 
 def compute_state_potential(board: AtaxxBoard, player: int) -> float:
@@ -62,12 +66,17 @@ def outcome_value_target(
     return 1.0 if winner == player_at_turn else -1.0
 
 
-def _normalize_history_entry(entry: HistoryEntry) -> ShapedHistoryEntry:
+def _normalize_history_entry(
+    entry: HistoryEntry,
+) -> tuple[np.ndarray, PolicyArray, int, float, float]:
+    if len(entry) == 5:
+        observation, policy, player_at_turn, shaping_reward, mcts_q = entry
+        return observation, policy, int(player_at_turn), float(shaping_reward), float(mcts_q)
     if len(entry) == 4:
         observation, policy, player_at_turn, shaping_reward = entry
-        return observation, policy, player_at_turn, float(shaping_reward)
+        return observation, policy, int(player_at_turn), float(shaping_reward), 0.0
     observation, policy, player_at_turn = entry
-    return observation, policy, player_at_turn, 0.0
+    return observation, policy, int(player_at_turn), 0.0, 0.0
 
 
 def history_to_examples(
@@ -86,6 +95,7 @@ def history_to_examples(
     next_player: int | None = None
     shaping_scale = cfg_float("reward_shaping_scale") if cfg_bool("reward_shaping_enabled") else 0.0
     gamma = cfg_float("reward_shaping_gamma")
+    mcts_q_lambda = max(0.0, min(1.0, cfg_float("value_mcts_q_lambda")))
 
     # count_diff: diferencia absoluta de piezas finales, signada por la
     # perspectiva del jugador que mueve. Si no hay counts conocidos,
@@ -98,7 +108,7 @@ def history_to_examples(
     # (self-play). We preserve perspective by only flipping the future suffix when control
     # passes to the other side between stored decisions.
     for entry in reversed(game_history):
-        observation, policy, player_at_turn, shaping_reward = _normalize_history_entry(entry)
+        observation, policy, player_at_turn, shaping_reward, mcts_q = _normalize_history_entry(entry)
         if next_player is None or next_player == player_at_turn:
             future_shaping = shaping_reward + (gamma * future_shaping)
         else:
@@ -110,6 +120,12 @@ def history_to_examples(
             winner=winner,
             forced_draw=forced_draw,
         )
+        # Q-mixed value target (KataGo trick): mezcla outcome con MCTS Q estimate.
+        # Reduce la varianza del target en jugadas tempranas que estan muy lejos
+        # del resultado final. mcts_q ya viene en la perspectiva del player_at_turn
+        # (root.value() desde el lado que mueve).
+        if mcts_q_lambda > 0.0:
+            z = (1.0 - mcts_q_lambda) * z + mcts_q_lambda * mcts_q
         target = float(np.clip(z + (shaping_scale * future_shaping), -1.0, 1.0))
         count_diff = final_diff_p1 if player_at_turn == 1 else -final_diff_p1
         # is_human_flag=0.0 por default (self-play/heuristica). Los loaders

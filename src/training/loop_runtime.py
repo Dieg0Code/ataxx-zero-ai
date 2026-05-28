@@ -14,7 +14,9 @@ from model.checkpoint_compat import (
     extract_checkpoint_state_dict,
 )
 from training.bootstrap import generate_imitation_data
-from training.callbacks import OptimizerStateTransfer
+from pytorch_lightning import Callback
+
+from training.callbacks import EMACallback, OptimizerStateTransfer
 from training.config_runtime import (
     TrainerPrecision,
     cfg_bool,
@@ -125,7 +127,7 @@ def build_train_loader(
 
     dataset = AtaxxDataset(
         buffer=None,
-        augment=True,
+        augment=cfg_bool("symmetry_augmentation"),
         reference_buffer=False,
         examples=train_examples,
     )
@@ -260,7 +262,11 @@ def fit_with_ddp_fallback(
     logger: Logger,
     optimizer_transfer: OptimizerStateTransfer,
     epoch_pulse: EpochPulseCallback,
+    ema_callback: EMACallback | None = None,
 ) -> tuple[pl.Trainer, str, int, str, TrainerPrecision]:
+    extra: list[Callback] = [optimizer_transfer, epoch_pulse]
+    if ema_callback is not None:
+        extra.append(ema_callback)
     trainer = build_trainer(
         epochs=epochs,
         accelerator=trainer_accelerator,
@@ -271,7 +277,7 @@ def fit_with_ddp_fallback(
         checkpoint_callback=checkpoint_callback,
         lr_monitor=lr_monitor,
         logger=logger,
-        extra_callbacks=[optimizer_transfer, epoch_pulse],
+        extra_callbacks=extra,
     )
     system.train()
     try:
@@ -300,7 +306,7 @@ def fit_with_ddp_fallback(
             checkpoint_callback=checkpoint_callback,
             lr_monitor=lr_monitor,
             logger=logger,
-            extra_callbacks=[optimizer_transfer, epoch_pulse],
+            extra_callbacks=extra,
         )
         system.train()
         trainer.fit(
@@ -331,6 +337,7 @@ def run_curated_pretrain_if_needed(
     device: str,
     optimizer_transfer: OptimizerStateTransfer,
     epoch_pulse: EpochPulseCallback,
+    ema_callback: EMACallback | None = None,
 ) -> tuple[str, int, str, TrainerPrecision]:
     dataset_path = cfg_str("pretrain_dataset_path").strip()
     pretrain_epochs = cfg_int("pretrain_epochs")
@@ -372,6 +379,7 @@ def run_curated_pretrain_if_needed(
         logger=logger,
         optimizer_transfer=optimizer_transfer,
         epoch_pulse=epoch_pulse,
+        ema_callback=ema_callback,
     )
     return trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision
 
@@ -392,6 +400,7 @@ def run_warmup_if_needed(
     optimizer_transfer: OptimizerStateTransfer,
     monitor: TrainingMonitor,
     epoch_pulse: EpochPulseCallback,
+    ema_callback: EMACallback | None = None,
 ) -> tuple[str, int, str, TrainerPrecision]:
     warmup_games = cfg_int("warmup_games")
     warmup_epochs = cfg_int("warmup_epochs")
@@ -451,6 +460,7 @@ def run_warmup_if_needed(
         logger=logger,
         optimizer_transfer=optimizer_transfer,
         epoch_pulse=epoch_pulse,
+        ema_callback=ema_callback,
     )
     return trainer_accelerator, trainer_devices, trainer_strategy, trainer_precision
 

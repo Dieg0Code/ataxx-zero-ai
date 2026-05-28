@@ -21,17 +21,57 @@ class AtaxxTransformerNet(nn.Module):
         dropout: float = 0.1,
         value_head_depth: int = 1,
         count_head_enabled: bool = False,
+        transformer_pre_ln: bool = True,
+        pos_embed_2d: bool = True,
+        patch_embed_conv: bool = False,
+        num_input_channels: int | None = None,
     ) -> None:
         super().__init__()
         self.board_size = BOARD_SIZE
         self.num_cells = self.board_size * self.board_size
         self.num_actions = ACTION_SPACE.num_actions
-        self.num_input_channels = OBSERVATION_CHANNELS
+        # v15 final: num_input_channels permite a checkpoints pre-v15-final
+        # cargar con 11 canales aunque el board produzca 15. Forward recorta
+        # x[:, :self.num_input_channels, ...] antes de cualquier proyeccion.
+        self.num_input_channels = (
+            int(num_input_channels)
+            if num_input_channels is not None
+            else OBSERVATION_CHANNELS
+        )
         self.value_head_depth = int(value_head_depth)
         self.count_head_enabled = bool(count_head_enabled)
+        self.transformer_pre_ln = bool(transformer_pre_ln)
+        self.pos_embed_2d = bool(pos_embed_2d)
+        self.patch_embed_conv = bool(patch_embed_conv)
 
-        self.input_proj = nn.Linear(self.num_input_channels, d_model)
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_cells + 1, d_model))
+        # v15 final: patch embedding convolucional opcional. Conv2d 3x3 con
+        # padding=1 inyecta inductive bias espacial local (vecindad de cada
+        # celda) antes de que el transformer empiece a propagar globalmente.
+        # Sin esto el transformer aprende adyacencia 2D desde cero — caro.
+        self.input_proj: nn.Module
+        self.input_proj_conv: nn.Module
+        if self.patch_embed_conv:
+            self.input_proj_conv = nn.Conv2d(
+                self.num_input_channels,
+                d_model,
+                kernel_size=3,
+                padding=1,
+            )
+            self.input_proj = nn.Identity()
+        else:
+            self.input_proj_conv = nn.Identity()
+            self.input_proj = nn.Linear(self.num_input_channels, d_model)
+        # Two positional schemes:
+        # - 1D (legacy <= v14): one learned embedding per (cell + cls), no
+        #   geometric prior — the network must learn 2D adjacency from scratch.
+        # - 2D (v15+): row_embed[r] + col_embed[c] sumados give a minimal
+        #   geometric prior — neighboring cells share half their pos signal.
+        if self.pos_embed_2d:
+            self.cls_pos = nn.Parameter(torch.zeros(1, 1, d_model))
+            self.row_embed = nn.Parameter(torch.zeros(1, self.board_size, d_model))
+            self.col_embed = nn.Parameter(torch.zeros(1, self.board_size, d_model))
+        else:
+            self.pos_embed = nn.Parameter(torch.zeros(1, self.num_cells + 1, d_model))
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
 
         encoder_layer = nn.TransformerEncoderLayer(
@@ -41,7 +81,7 @@ class AtaxxTransformerNet(nn.Module):
             dropout=dropout,
             activation="gelu",
             batch_first=True,
-            norm_first=False,
+            norm_first=self.transformer_pre_ln,
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
@@ -110,14 +150,28 @@ class AtaxxTransformerNet(nn.Module):
         self.register_buffer("_action_dst_idx", torch.tensor(dst_list, dtype=torch.long))
 
     def _init_weights(self) -> None:
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        if self.pos_embed_2d:
+            nn.init.trunc_normal_(self.cls_pos, std=0.02)
+            nn.init.trunc_normal_(self.row_embed, std=0.02)
+            nn.init.trunc_normal_(self.col_embed, std=0.02)
+        else:
+            nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.cls_token, std=0.02)
 
         for module in self.modules():
-            if isinstance(module, nn.Linear):
+            if isinstance(module, nn.Linear | nn.Conv2d):
                 nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
+
+    def _build_pos_embed(self) -> torch.Tensor:
+        if self.pos_embed_2d:
+            # row_embed: (1, 7, d). col_embed: (1, 7, d).
+            # Broadcast a (1, 7, 7, d) and sum: each cell gets row[r] + col[c].
+            grid = self.row_embed[:, :, None, :] + self.col_embed[:, None, :, :]
+            grid = grid.reshape(1, self.num_cells, grid.size(-1))
+            return torch.cat([self.cls_pos, grid], dim=1)
+        return self.pos_embed
 
     def build_action_mask(self, x: torch.Tensor) -> torch.Tensor:
         """Derive legal actions from the board observation without target leakage."""
@@ -161,15 +215,28 @@ class AtaxxTransformerNet(nn.Module):
         count loss sin ramificar el forward.
         """
         batch_size = x.size(0)
-        x = x.permute(0, 2, 3, 1).contiguous().view(
-            batch_size,
-            self.num_cells,
-            self.num_input_channels,
-        )
-        x = self.input_proj(x)
+        # v15 final: recortar canales si el modelo fue entrenado con menos
+        # de los que produce el board actual (compat para checkpoints viejos).
+        if x.size(1) > self.num_input_channels:
+            x = x[:, : self.num_input_channels, :, :]
+        if self.patch_embed_conv:
+            # Conv2d expects (batch, channels, H, W). Output: (batch, d_model, 7, 7).
+            x = self.input_proj_conv(x)
+            x = x.permute(0, 2, 3, 1).contiguous().view(
+                batch_size,
+                self.num_cells,
+                x.size(1),
+            )
+        else:
+            x = x.permute(0, 2, 3, 1).contiguous().view(
+                batch_size,
+                self.num_cells,
+                self.num_input_channels,
+            )
+            x = self.input_proj(x)
 
         cls = self.cls_token.expand(batch_size, -1, -1)
-        tokens = torch.cat([cls, x], dim=1) + self.pos_embed
+        tokens = torch.cat([cls, x], dim=1) + self._build_pos_embed()
         encoded = self.encoder(tokens)
 
         cls_out = encoded[:, 0]

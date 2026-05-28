@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from agents.heuristic import HEURISTIC_LEVELS
+from game.constants import OBSERVATION_CHANNELS
 from training.config_runtime import cfg_bool, cfg_float, cfg_int, log
 from training.league_runtime import (
     CheckpointModelSpec,
@@ -77,18 +78,23 @@ def _log_curriculum_mix(*, iteration: int) -> None:
         f"[Iteration {iteration}] self-play start episodes={cfg_int('episodes_per_iter')} "
         f"sims={cfg_int('mcts_sims')} workers={cfg_int('selfplay_workers')}",
     )
+    league_redirect = cfg_float("league_selfplay_checkpoint_prob")
+    effective_league = float(curriculum_mix["self"]) * league_redirect
+    effective_self = float(curriculum_mix["self"]) - effective_league
     log(
         "  Opponent mix: "
-        f"self={curriculum_mix['self']:.2f}, "
+        f"self={effective_self:.2f}, "
+        f"league={effective_league:.2f}, "
         f"heuristic={curriculum_mix['heuristic']:.2f}, "
         f"random={curriculum_mix['random']:.2f}",
         verbose_only=True,
     )
-    heuristic_mix = " ".join(
-        f"{level}={curriculum_mix[f'heu_{level}']:.2f}"
-        for level in HEURISTIC_LEVELS
-    )
-    log(f"  Heuristic levels: {heuristic_mix}", verbose_only=True)
+    if float(curriculum_mix["heuristic"]) > 0.0:
+        heuristic_mix = " ".join(
+            f"{level}={curriculum_mix[f'heu_{level}']:.2f}"
+            for level in HEURISTIC_LEVELS
+        )
+        log(f"  Heuristic levels: {heuristic_mix}", verbose_only=True)
 
 
 def _empty_stats() -> dict[str, float | int]:
@@ -169,6 +175,10 @@ def _run_parallel_selfplay(
         "dropout": cfg_float("dropout"),
         "value_head_depth": cfg_int("value_head_depth"),
         "count_head_enabled": float(cfg_bool("count_head_enabled")),
+        "transformer_pre_ln": float(cfg_bool("transformer_pre_ln")),
+        "pos_embed_2d": float(cfg_bool("pos_embed_2d")),
+        "patch_embed_conv": float(cfg_bool("patch_embed_conv")),
+        "num_input_channels": float(OBSERVATION_CHANNELS),
     }
     serialized_opponent_specs = {
         participant_id: (spec.state_dict, spec.model_cfg)
@@ -297,6 +307,11 @@ def execute_self_play(
         leaf_batch_size=max(1, cfg_int("mcts_leaf_batch_size")),
         dirichlet_alpha=cfg_float("mcts_dirichlet_alpha"),
         dirichlet_frac=cfg_float("mcts_dirichlet_frac"),
+        fpu_reduction=cfg_float("mcts_fpu_reduction"),
+        virtual_loss=cfg_float("mcts_virtual_loss"),
+        prior_uniform_mix=cfg_float("mcts_prior_uniform_mix"),
+        forced_playout_k=cfg_float("mcts_forced_playout_k"),
+        policy_target_prune_forced=cfg_bool("mcts_policy_target_prune_forced"),
     )
 
     episodes = cfg_int("episodes_per_iter")
@@ -438,6 +453,13 @@ def execute_self_play(
     log(
         f"  Self-play summary: P1={stats['wins_p1']} P2={stats['wins_p2']} draws={stats['draws']} "
         f"avg_turns={stats['avg_game_length']:.1f} cache_hit={float(stats['cache_hit_rate']):.1%}",
+        verbose_only=True,
+    )
+    log(
+        f"  Episodes by opponent: self={stats['episodes_vs_self']} "
+        f"league={stats['episodes_vs_checkpoint']} "
+        f"heuristic={stats['episodes_vs_heuristic']} "
+        f"random={stats['episodes_vs_random']}",
         verbose_only=True,
     )
     return stats

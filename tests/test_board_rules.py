@@ -193,9 +193,11 @@ class TestBoardRules(unittest.TestCase):
 
     def test_half_move_observation_uses_extended_late_game_scale(self) -> None:
         board = AtaxxBoard()
-        board.half_moves = 128
+        board.half_moves = 60
         obs = board.get_observation()
 
+        # v15 final: HALF_MOVE_OBS_SCALE=120 alineado con max_half_moves_cap.
+        # 60/120 = 0.5 — punto medio del scale.
         self.assertTrue(np.allclose(obs[3], 0.5))
 
 

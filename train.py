@@ -13,12 +13,13 @@ root = Path(__file__).resolve().parent
 src = root / "src"
 if str(src) not in sys.path:
     sys.path.insert(0, str(src))
+from game.constants import OBSERVATION_CHANNELS  # noqa: E402
 from inference.checkpoint_duel_runtime import run_match_results_to_summary  # noqa: E402
 from training.absolute_gate_runtime import (  # noqa: E402
     absolute_gate_message,
     evaluate_absolute_gate,
 )
-from training.callbacks import OptimizerStateTransfer  # noqa: E402
+from training.callbacks import EMACallback, OptimizerStateTransfer  # noqa: E402
 from training.checkpointing import (  # noqa: E402
     cleanup_local_checkpoints,
     cleanup_old_log_versions,
@@ -105,8 +106,14 @@ def main() -> None:
         d_model=cfg_int("d_model"), nhead=cfg_int("nhead"), num_layers=cfg_int("num_layers"),
         dim_feedforward=cfg_int("dim_feedforward"), dropout=cfg_float("dropout"),
         value_head_depth=cfg_int("value_head_depth"), count_head_enabled=cfg_bool("count_head_enabled"),
+        transformer_pre_ln=cfg_bool("transformer_pre_ln"),
+        pos_embed_2d=cfg_bool("pos_embed_2d"),
+        patch_embed_conv=cfg_bool("patch_embed_conv"),
+        num_input_channels=OBSERVATION_CHANNELS,
         symmetry_augmentation=cfg_bool("symmetry_augmentation"),
         scheduler_type="cosine", max_epochs=iterations * epochs,
+        lr_warmup_steps=cfg_int("lr_warmup_steps"),
+        adam_beta2=cfg_float("adam_beta2"),
     )
     if device == "cuda" and cfg_bool("compile_model"):
         try:
@@ -151,6 +158,10 @@ def main() -> None:
     absolute_fail_count = 0
     h2h_fail_count = 0
     optimizer_transfer = OptimizerStateTransfer()
+    ema_decay = cfg_float("ema_decay")
+    ema_callback: EMACallback | None = (
+        EMACallback(decay=ema_decay) if ema_decay > 0.0 else None
+    )
     monitor = TrainingMonitor(
         total_iterations=iterations,
         log_every=cfg_int("monitor_log_every"),
@@ -167,6 +178,7 @@ def main() -> None:
         checkpoint_callback=checkpoint_callback, lr_monitor=lr_monitor,
         logger=logger, device=device,
         optimizer_transfer=optimizer_transfer, epoch_pulse=epoch_pulse,
+        ema_callback=ema_callback,
     )
     human_replay_examples, human_batch_fraction = load_human_replay_buffer()
 
@@ -185,6 +197,7 @@ def main() -> None:
         optimizer_transfer=optimizer_transfer,
         monitor=monitor,
         epoch_pulse=epoch_pulse,
+        ema_callback=ema_callback,
     )
 
     try:
@@ -230,6 +243,7 @@ def main() -> None:
                     logger=logger,
                     optimizer_transfer=optimizer_transfer,
                     epoch_pulse=epoch_pulse,
+                    ema_callback=ema_callback,
                 )
             )
             fit_s = time.perf_counter() - fit_start

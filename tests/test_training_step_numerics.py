@@ -273,5 +273,48 @@ class TestTrainingStepNumerics(unittest.TestCase):
         self.assertTrue(torch.isclose(metrics["loss_count"], expected_count))
 
 
+    def test_pos_embed_2d_forward_shapes_and_compactness(self) -> None:
+        """v15+ usa pos_embed 2D: row_embed (7,d) + col_embed (7,d) + cls_pos (1,d)
+        en vez de un pos_embed (50,d) plano. Esto da inductive bias geometrico
+        minimo (celdas vecinas comparten la mitad de la senal posicional) y
+        reduce ~13K params."""
+        from model.transformer import AtaxxTransformerNet
+
+        net_2d = AtaxxTransformerNet(
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+            pos_embed_2d=True,
+        )
+        net_1d = AtaxxTransformerNet(
+            d_model=64,
+            nhead=8,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.0,
+            pos_embed_2d=False,
+        )
+
+        boards = torch.randn(2, OBSERVATION_CHANNELS, 7, 7)
+        action_mask = torch.ones(2, ACTION_SPACE.num_actions)
+
+        policy_2d, value_2d = net_2d(boards, action_mask=action_mask)
+        policy_1d, value_1d = net_1d(boards, action_mask=action_mask)
+
+        self.assertEqual(policy_2d.shape, (2, ACTION_SPACE.num_actions))
+        self.assertEqual(value_2d.shape, (2, 1))
+        self.assertEqual(policy_1d.shape, policy_2d.shape)
+        self.assertEqual(value_1d.shape, value_2d.shape)
+
+        params_2d = sum(int(p.numel()) for p in net_2d.parameters())
+        params_1d = sum(int(p.numel()) for p in net_1d.parameters())
+        # 1D: pos_embed (50,64)=3200. 2D: cls_pos (64) + row (7,64) + col (7,64) = 960.
+        # Diff esperada: 3200 - 960 = 2240 params menos en 2D para d=64.
+        self.assertLess(params_2d, params_1d)
+        self.assertEqual(params_1d - params_2d, 50 * 64 - (64 + 7 * 64 + 7 * 64))
+
+
 if __name__ == "__main__":
     unittest.main()

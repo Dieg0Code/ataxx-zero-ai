@@ -16,6 +16,10 @@ _MODEL_KWARG_KEYS = {
     "dropout",
     "value_head_depth",
     "count_head_enabled",
+    "transformer_pre_ln",
+    "pos_embed_2d",
+    "patch_embed_conv",
+    "num_input_channels",
 }
 _INPUT_PROJ_KEYS = ("input_proj.weight", "model.input_proj.weight")
 
@@ -26,7 +30,33 @@ def extract_model_kwargs(payload: Mapping[str, Any]) -> dict[str, Any]:
         raw_hparams = payload.get("hyper_parameters", {})
     if not isinstance(raw_hparams, dict):
         return {}
-    return {key: raw_hparams[key] for key in _MODEL_KWARG_KEYS if key in raw_hparams}
+    extracted = {key: raw_hparams[key] for key in _MODEL_KWARG_KEYS if key in raw_hparams}
+    # Si no hubo NINGUN hparam de arquitectura, no aplicamos backfills —
+    # el caller (tests sin hparams, o checkpoints en bruto) va a usar
+    # defaults de AtaxxTransformerNet. Backfillear aqui forzaria valores
+    # legacy (num_input_channels=11) sobre modelos modernos.
+    if not extracted:
+        return {}
+    # Pre-v14 checkpoints predate the Pre-LN flag. If the key is absent we
+    # must assume Post-LN (norm_first=False); otherwise inference loads the
+    # weights into a Pre-LN structure and produces silently wrong outputs.
+    if "transformer_pre_ln" not in extracted:
+        extracted["transformer_pre_ln"] = False
+    # Pre-v15 checkpoints predate the 2D pos_embed. State dict has a single
+    # `pos_embed` tensor (no row/col split); building the v15 architecture
+    # with pos_embed_2d=True would expect row_embed+col_embed+cls_pos and
+    # load_state_dict would mismatch.
+    if "pos_embed_2d" not in extracted:
+        extracted["pos_embed_2d"] = False
+    # Pre-v15-final checkpoints predate patch_embed_conv. Default off para
+    # que el state dict cargue input_proj (Linear) en lugar de input_proj_conv.
+    if "patch_embed_conv" not in extracted:
+        extracted["patch_embed_conv"] = False
+    # Pre-v15-final checkpoints fueron entrenados con 11 canales de input.
+    # El board nuevo produce 15; el forward del modelo recorta.
+    if "num_input_channels" not in extracted:
+        extracted["num_input_channels"] = 11
+    return extracted
 
 
 def extract_checkpoint_state_dict(payload: Mapping[str, Any]) -> dict[str, Any]:

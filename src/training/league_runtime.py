@@ -26,6 +26,15 @@ ALLOWED_MODEL_HPARAMS = {
 OPTIONAL_MODEL_HPARAMS_DEFAULTS: dict[str, int | float] = {
     "value_head_depth": 1,
     "count_head_enabled": 0.0,
+    # Pre-v14 league checkpoints predate Pre-LN. Default to 0 (Post-LN) when
+    # hparams lacks the key so they load with the correct forward semantics.
+    "transformer_pre_ln": 0.0,
+    # Pre-v15 league checkpoints predate 2D pos_embed. Default to 0 (1D flat).
+    "pos_embed_2d": 0.0,
+    # Pre-v15-final league checkpoints predate patch_embed conv.
+    "patch_embed_conv": 0.0,
+    # Pre-v15-final league checkpoints entrenaron con 11 canales.
+    "num_input_channels": 11.0,
 }
 
 
