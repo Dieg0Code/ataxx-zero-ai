@@ -1,7 +1,7 @@
 {
   "hf_enabled": true,
   "hf_repo_id": "dieg0code/ataxx-zero",
-  "hf_run_id": "policy_spatial_v15_2",
+  "hf_run_id": "policy_spatial_v15_3",
   "hf_bootstrap_run_id": "",
   "hf_reset_iteration": false,
   "checkpoint_dir": "/kaggle/working/checkpoints",
@@ -73,7 +73,7 @@
   "wandb_enabled": true,
   "wandb_project": "ataxx-zero",
   "wandb_entity": "dieg0code-ai",
-  "wandb_run_name": "policy_spatial_v15_2",
+  "wandb_run_name": "policy_spatial_v15_3",
   "fail_on_selfplay_parallel_error": false,
   "export_onnx": false,
   "compile_model": false,
