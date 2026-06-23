@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -33,6 +34,33 @@ def resolve_model_checkpoints(
             )
         checkpoints[player] = checkpoint_path
     return checkpoints
+
+
+def build_model_labels_by_player(
+    *,
+    name_args_by_player: dict[int, str],
+) -> dict[int, str]:
+    """Map each player to a HUD label 'CODENAME (iter N)' resolved from the registry.
+
+    `name_args_by_player` carries the raw checkpoint argument per player (codename,
+    version, or path). Codename and iteration come from `registry.json` (no .pt
+    load needed). Checkpoints outside the registry fall back to the filename stem.
+    The separator stays ASCII so the pixel HUD font renders it without tofu.
+    """
+    from model.registry import find_model
+
+    labels: dict[int, str] = {}
+    for player, name in name_args_by_player.items():
+        entry = find_model(name)
+        if entry is not None:
+            codename = str(entry.get("codename", name)).upper()
+            iteration = entry.get("iter")
+            labels[player] = (
+                f"{codename} (iter {iteration})" if iteration is not None else codename
+            )
+        else:
+            labels[player] = Path(name).stem or name
+    return labels
 
 
 def build_model_mcts_by_player(
@@ -80,6 +108,7 @@ def build_model_mcts_by_player(
 
 
 __all__ = [
+    "build_model_labels_by_player",
     "build_model_mcts_by_player",
     "resolve_model_checkpoints",
 ]

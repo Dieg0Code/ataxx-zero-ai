@@ -668,6 +668,8 @@ def play_single_match(
             status=status,
             p1_level=p1_level,
             p2_level=p2_level,
+            p1_label=p1_label,
+            p2_label=p2_label,
             recent=recent,
             move_cells=move_cells,
             infect_cells=infect_cells,

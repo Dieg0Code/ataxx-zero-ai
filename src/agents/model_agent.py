@@ -10,6 +10,15 @@ from game.board import AtaxxBoard
 from game.types import Move
 
 
+def _model_d_model(model: torch.nn.Module) -> int:
+    """d_model robusto: pos_embed 1D (pre-v15) o row/col embeddings (pos_embed_2d)."""
+    for attr in ("pos_embed", "col_embed", "row_embed", "cls_pos", "cls_token"):
+        tensor = getattr(model, attr, None)
+        if tensor is not None:
+            return int(tensor.shape[-1])
+    return 0
+
+
 def model_move(board: AtaxxBoard, mcts: object | None) -> Move | None:
     from engine.mcts import MCTS
 
@@ -136,6 +145,6 @@ def _model_brain_diagnostics(board: AtaxxBoard, mcts: object) -> dict[str, Any]:
             "tokens": 50,
             "layers": int(getattr(model.encoder, "num_layers", 0)),
             "heads": int(getattr(model.encoder.layers[0].self_attn, "num_heads", 0)),
-            "d_model": int(model.pos_embed.shape[-1]),
+            "d_model": int(_model_d_model(model)),
         },
     }

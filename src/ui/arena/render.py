@@ -104,6 +104,8 @@ def draw_arena(
     game_over_started: int | None,
     final_counts: tuple[int, int] | None,
     arena_state: dict[str, object] | None = None,
+    p1_label: str = "",
+    p2_label: str = "",
 ) -> None:
     scene = pygame.Surface((WIN_W, WIN_H))
 
@@ -271,8 +273,8 @@ def draw_arena(
     draw_hud(
         scene,
         arena_state=arena_state or {},
-        p1_name=str(p1_agent) + (f"({p1_level})" if p1_level != "-" else ""),
-        p2_name=str(p2_agent) + (f"({p2_level})" if p2_level != "-" else ""),
+        p1_name=p1_label or (str(p1_agent) + (f"({p1_level})" if p1_level != "-" else "")),
+        p2_name=p2_label or (str(p2_agent) + (f"({p2_level})" if p2_level != "-" else "")),
         p1_agent=str(p1_agent),
         p2_agent=str(p2_agent),
         p1_count=p1_count,

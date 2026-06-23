@@ -57,12 +57,23 @@ def _side_name(player: int | None) -> str:
     return "--"
 
 
+def _ai_side_name(player: int, p1_name: str, p2_name: str) -> str:
+    """Codename corto del lado IA para el header de perspectiva ('NEMESIS' en vez
+    de 'IA'). Recorta el sufijo ' (iter N)' del label del HUD; cae a 'IA' si no hay
+    nombre."""
+    name = (p1_name if player == 1 else p2_name).strip()
+    short = name.split(" (iter ")[0].strip()
+    return short or "IA"
+
+
 def _select_perspective(
     *,
     p1_agent: str,
     p2_agent: str,
     turn_player: int,
     thinker_player: int | None,
+    p1_name: str = "",
+    p2_name: str = "",
 ) -> tuple[str, int]:
     ai_sides = [
         player
@@ -70,7 +81,7 @@ def _select_perspective(
         if agent != "human"
     ]
     if len(ai_sides) == 1:
-        return "IA", ai_sides[0]
+        return _ai_side_name(ai_sides[0], p1_name, p2_name), ai_sides[0]
     if len(ai_sides) > 1:
         return "TURNO", turn_player
     if thinker_player in (1, -1):
@@ -481,6 +492,8 @@ def draw_top_moves_panel(
     turn_player: int,
     font_title: pygame.font.Font,
     font_body: pygame.font.Font,
+    p1_name: str = "",
+    p2_name: str = "",
 ) -> None:
     inner = _draw_panel_frame(surf, rect, "CEREBRO IA", font_title)
     bar_color = PIECE_P1 if thinker_player == 1 else PIECE_P2
@@ -496,6 +509,8 @@ def draw_top_moves_panel(
         p2_agent=p2_agent,
         turn_player=turn_player,
         thinker_player=thinker_player,
+        p1_name=p1_name,
+        p2_name=p2_name,
     )
     clamped_p1 = max(-1.0, min(1.0, float(root_value)))
     win_pct_p1 = (clamped_p1 + 1.0) * 50.0
@@ -669,6 +684,8 @@ def draw_hud(
         turn_player=turn_player,
         font_title=font_title,
         font_body=font_body,
+        p1_name=p1_name,
+        p2_name=p2_name,
     )
 
     move_history = arena_state.get("move_history", [])
@@ -682,6 +699,8 @@ def draw_hud(
         p2_agent=p2_agent,
         turn_player=turn_player,
         thinker_player=thinker_player,
+        p1_name=p1_name,
+        p2_name=p2_name,
     )
     draw_history_panel(
         surf,

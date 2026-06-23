@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 from ui.arena.model_runtime import (
+    build_model_labels_by_player,
     build_model_mcts_by_player,
     resolve_model_checkpoints,
 )
@@ -71,6 +73,32 @@ class TestUiArenaModelRuntime(unittest.TestCase):
 
         self.assertEqual(loaded, ["checkpoints/shared.pt@cpu"])
         self.assertIs(runtimes[1], runtimes[-1])
+
+
+    def test_build_model_labels_uses_codename_and_iter_from_registry(self) -> None:
+        registry: dict[str, dict[str, object]] = {
+            "nemesis": {"codename": "nemesis", "iter": 152},
+            "legion": {"codename": "legion"},  # sin iter
+        }
+
+        def fake_find_model(name: str) -> dict[str, object] | None:
+            return registry.get(name)
+
+        with mock.patch("model.registry.find_model", side_effect=fake_find_model):
+            labels = build_model_labels_by_player(
+                name_args_by_player={1: "nemesis", -1: "legion"},
+            )
+
+        self.assertEqual(labels[1], "NEMESIS (iter 152)")
+        self.assertEqual(labels[-1], "LEGION")
+
+    def test_build_model_labels_falls_back_to_stem_for_unregistered_path(self) -> None:
+        with mock.patch("model.registry.find_model", return_value=None):
+            labels = build_model_labels_by_player(
+                name_args_by_player={1: "runs_history/_dl/model_iter_134.pt"},
+            )
+
+        self.assertEqual(labels[1], "model_iter_134")
 
 
 if __name__ == "__main__":

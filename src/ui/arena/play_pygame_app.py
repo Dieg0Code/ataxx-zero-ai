@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,7 @@ from agents.registry import (  # noqa: E402
 )
 from ui.arena.layout import WIN_H, WIN_W  # noqa: E402
 from ui.arena.model_runtime import (  # noqa: E402
+    build_model_labels_by_player,
     build_model_mcts_by_player,
     resolve_model_checkpoints,
 )
@@ -40,6 +42,20 @@ PLAYER_2 = -1
 def _ensure_src_on_path() -> None:
     if str(_SRC) not in sys.path:
         sys.path.insert(0, str(_SRC))
+
+
+def _tune_cpu_threads() -> None:
+    """Usa todos los núcleos lógicos para el forward del transformer en CPU.
+
+    torch arranca con 2 threads por default; en la arena (single-game, MCTS
+    secuencial) el cuello es el matmul del forward, así que dejar que BLAS use
+    todos los núcleos acelera cada simulación. No-op si ya hay GPU.
+    """
+    if torch.cuda.is_available():
+        return
+    cores = os.cpu_count() or 1
+    if cores > torch.get_num_threads():
+        torch.set_num_threads(cores)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -218,14 +234,18 @@ def _maybe_handle_fullscreen_play(event: pygame.event.Event) -> bool:
 
 
 def _should_record_replay(args: argparse.Namespace, p1_agent: Agent, p2_agent: Agent) -> bool:
-    """Graba si hay al menos un agente IA (no humano-humano hotseat)."""
+    """Graba salvo en hotseat humano-vs-humano.
+
+    Cubre play (humano vs IA) y spectate (IA vs IA): correr spectate en local es
+    siempre para analizar algo, asi que necesitamos el historial de la partida.
+    """
     if getattr(args, "no_record_replay", False):
         return False
     kinds = {
         agent_kind(p1_agent, default_heuristic_level=args.heuristic_level),
         agent_kind(p2_agent, default_heuristic_level=args.heuristic_level),
     }
-    return "human" in kinds and kinds != {"human"}
+    return kinds != {"human"}
 
 
 def _build_play_recorder(
@@ -242,22 +262,35 @@ def _build_play_recorder(
     if not _should_record_replay(args, p1_agent, p2_agent):
         return None
     p1_kind = agent_kind(p1_agent, default_heuristic_level=args.heuristic_level)
-    if p1_kind == "human":
+    p2_kind = agent_kind(p2_agent, default_heuristic_level=args.heuristic_level)
+    human_label: str | None
+    if "human" not in {p1_kind, p2_kind}:
+        # Spectate (IA vs IA): no hay humano; guardamos ambos labels para analisis.
+        mode = "spectate"
+        starter = "ai"
+        human_label = None
+        ai_label = f"{p1_label} vs {p2_label}"
+        subdir = "spectate_sessions"
+    elif p1_kind == "human":
+        mode = "play"
         starter = "human"
         human_label = p1_label
         ai_label = p2_label
+        subdir = "play_sessions"
     else:
+        mode = "play"
         starter = "ai"
         human_label = p2_label
         ai_label = p1_label
+        subdir = "play_sessions"
     stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-    save_path = Path("tournament_replays") / "play_sessions" / f"{stamp}.npz"
+    save_path = Path("tournament_replays") / subdir / f"{stamp}.npz"
     metadata = ReplayMetadata(
-        mode="play",
+        mode=mode,
         player_ai=str(ai_label),
         starter=starter,
         mcts_sims=int(args.mcts_sims),
-        player_human=str(human_label),
+        player_human=human_label,
         p1_label=str(p1_label),
         p2_label=str(p2_label),
     )
@@ -266,6 +299,7 @@ def _build_play_recorder(
 
 def main() -> None:
     _ensure_src_on_path()
+    _tune_cpu_threads()
     from game.board import AtaxxBoard
 
     args = _parse_args()
@@ -329,8 +363,23 @@ def main() -> None:
     font, small, big = load_arena_fonts()
     sfx = build_sfx()
 
-    p1_label = f"{p1_agent}({p1_level})" if p1_level != "-" else str(p1_agent)
-    p2_label = f"{p2_agent}({p2_level})" if p2_level != "-" else str(p2_agent)
+    # Model sides get a 'CODENAME · iter N' label from the registry so the HUD
+    # tells Diego which generation/iteration he is facing (not just "model"/"IA").
+    name_args_by_player: dict[int, str] = {}
+    for player, agent in ((PLAYER_1, p1_agent), (PLAYER_2, p2_agent)):
+        if agent_kind(agent, default_heuristic_level=args.heuristic_level) != "model":
+            continue
+        side_arg = args.p1_checkpoint if player == PLAYER_1 else args.p2_checkpoint
+        name_args_by_player[player] = (side_arg or "").strip() or (args.checkpoint or "").strip()
+    model_labels = build_model_labels_by_player(name_args_by_player=name_args_by_player)
+
+    def _side_label(player: int, agent: Agent, level: str) -> str:
+        if player in model_labels:
+            return model_labels[player]
+        return f"{agent}({level})" if level != "-" else str(agent)
+
+    p1_label = _side_label(PLAYER_1, p1_agent, p1_level)
+    p2_label = _side_label(PLAYER_2, p2_agent, p2_level)
 
     def _flip_play() -> None:
         target = pygame.display.get_surface()
